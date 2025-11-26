@@ -1,0 +1,76 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+:root {
+  --color-cyan: #0ff1de;
+  --color-teal: #0ab89e;
+  --color-emerald: #34c471;
+  --color-ink: #03120d;
+  --color-ink-white: #ededed;
+  --color-ink-soft: #052019;
+  --color-surface: rgba(11, 32, 24, 0.72);
+  --color-surface-strong: rgba(15, 44, 31, 0.9);
+  --color-primary: #41924c;
+  --color-primary-strong: #34743d;
+  --color-primary-soft: #214e28;
+  --color-accent-yellow: #ffff00;
+  --color-accent-yellow-strong: #e5e500;
+  --color-accent-olive: #cfcd3e;
+  --color-alert: #ff0000;
+  --color-muted: rgba(255, 255, 255, 0.68);
+  --shadow-soft: 0 28px 80px -48px rgba(0, 0, 0, 0.8);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-ink-white);
+  color: #000000;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(255, 255, 0, 0.4);
+  color: #0f281d;
+}
+
+/* Animasi utilitas */
+@keyframes fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide {
+  animation: fade-slide 0.8s ease-out forwards;
+}
+
+.animate-pulse-slow {
+  animation: pulse 2.5s infinite ease-in-out;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 1.8s linear infinite;
+}
+
+/* Sembunyikan ikon password default */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-textfield-decoration-container {
+  display: none !important;
+}

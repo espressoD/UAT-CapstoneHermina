@@ -1,0 +1,116 @@
+// src/components/uiAdmin/PetugasJagaCard.jsx
+import { useState, useEffect } from 'react';
+
+// Komponen bar (padding p-2.5)
+const PetugasList = ({ title, list, bgColor, textColor, borderColor }) => {
+  // Untuk perawat, jika lebih dari 7, tampilkan 2 kolom
+  const isPerawat = title.toLowerCase().includes('perawat');
+  const useGrid = isPerawat && list && list.length > 7;
+  let left = [], right = [];
+  if (useGrid) {
+    left = list.slice(0, Math.ceil(list.length / 2));
+    right = list.slice(Math.ceil(list.length / 2));
+  }
+  return (
+    <div className={`p-2.5 rounded-lg shadow-sm ${bgColor} ${borderColor} border`}>
+      <h4 className={`font-semibold ${textColor} text-sm`}>{title}</h4>
+      {useGrid ? (
+        <div className="grid grid-cols-2 gap-3">
+          <ul className={`list-disc list-inside ${textColor} opacity-90 text-sm mt-1 space-y-0.5`}>
+            {left.map((petugas, index) => <li key={index}>{petugas}</li>)}
+          </ul>
+          <ul className={`list-disc list-inside ${textColor} opacity-90 text-sm mt-1 space-y-0.5`}>
+            {right.map((petugas, index) => <li key={index}>{petugas}</li>)}
+          </ul>
+        </div>
+      ) : (
+        <ul className={`list-disc list-inside ${textColor} opacity-90 text-sm mt-1 space-y-0.5`}>
+          {list && list.length > 0 ? (
+            list.map((petugas, index) => <li key={index}>{petugas}</li>)
+          ) : (
+            <li style={{ listStyle: 'none' }}>- Belum di-set -</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// Terima 'className' sebagai prop (masih penting untuk h-full)
+export default function PetugasJagaCard({ 
+  className = ''
+}) {
+  const [penanggungJawab, setPenanggungJawab] = useState([]);
+  const [perawat, setPerawat] = useState([]);
+  const [dokterIgd, setDokterIgd] = useState([]);
+
+  useEffect(() => {
+    // Load data dari database via API
+    const fetchPetugasJaga = async () => {
+      try {
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${API_URL}/api/v2/settings`);
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.petugas_jaga) {
+            // Format Penanggung Jawab - maksimal 2
+            const pjList = (data.petugas_jaga.penanggungJawab || []).slice(0, 2).map(pj => pj.nama);
+            setPenanggungJawab(pjList);
+            
+            // Format Perawat - maksimal 14
+            const perawatList = (data.petugas_jaga.perawatJaga || []).slice(0, 14).map(p => p.nama);
+            setPerawat(perawatList);
+            
+            // Format Dokter IGD - maksimal 3
+            const dokterList = (data.petugas_jaga.dokterIgdJaga || []).slice(0, 3).map(d => d.nama);
+            setDokterIgd(dokterList);
+          }
+        } else {
+          if (import.meta.env.DEV) {
+            console.error('Failed to fetch petugas jaga settings');
+          }
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.error('Error loading Petugas Jaga settings:', error);
+        }
+      }
+    };
+
+    fetchPetugasJaga();
+  }, []);
+  
+  return (
+    <div className={`bg-white p-3 rounded-lg shadow-sm flex flex-col ${className}`}>
+      
+      <h3 className="text-lg font-semibold text-gray-800 mb-2">
+        Petugas Jaga
+      </h3>
+      
+      <div className="space-y-3">
+        <PetugasList 
+          title="Penanggung Jawab" 
+          list={penanggungJawab}
+          bgColor="bg-blue-100" 
+          textColor="text-blue-800"
+          borderColor="border-blue-200"
+        />
+        <PetugasList 
+          title="Perawat" 
+          list={perawat}
+          bgColor="bg-pink-100" 
+          textColor="text-pink-800"
+          borderColor="border-pink-200"
+        />
+        <PetugasList 
+          title="Dokter IGD" 
+          list={dokterIgd}
+          bgColor="bg-orange-100" 
+          textColor="text-orange-800"
+          borderColor="border-orange-200"
+        />
+      </div>
+    </div>
+  );
+}

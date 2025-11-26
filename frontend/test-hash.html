@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Hashids Encoding</title>
+</head>
+<body>
+    <h1>Test Hashids System</h1>
+    
+    <div>
+        <h2>Test Encode</h2>
+        <input id="nomorInput" type="text" placeholder="Nomor Antrian" value="191118002">
+        <button onclick="testEncode()">Test Encode</button>
+        <pre id="encodeResult"></pre>
+    </div>
+    
+    <div>
+        <h2>Test Decode</h2>
+        <input id="hashInput" type="text" placeholder="Hash">
+        <button onclick="testDecode()">Test Decode/Status</button>
+        <pre id="decodeResult"></pre>
+    </div>
+    
+    <script>
+        async function testEncode() {
+            const nomor = document.getElementById('nomorInput').value;
+            const result = document.getElementById('encodeResult');
+            
+            try {
+                result.textContent = 'Loading...';
+                const response = await fetch('http://localhost:3001/api/public/encode-antrian', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nomor_antrian: nomor })
+                });
+                
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                
+                if (data.hash) {
+                    document.getElementById('hashInput').value = data.hash;
+                }
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        async function testDecode() {
+            const hash = document.getElementById('hashInput').value;
+            const result = document.getElementById('decodeResult');
+            
+            try {
+                result.textContent = 'Loading...';
+                const response = await fetch(`http://localhost:3001/api/public/status?q=${hash}`);
+                
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
