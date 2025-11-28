@@ -14,7 +14,8 @@ import {
   Home,
   UserMinus,
   Search,
-  Download
+  Download,
+  ArrowRightCircle
 } from "lucide-react";
 import Papa from 'papaparse'; 
 
@@ -107,6 +108,8 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
     statusInfo = { text: "Selesai (Rawat Inap)", color: "bg-blue-600 text-white" };
   } else if (kunjungan.keputusan_akhir === "meninggal") {
     statusInfo = { text: "Selesai (Meninggal)", color: "bg-gray-800 text-white" };
+  } else if (kunjungan.keputusan_akhir === "rujuk") {
+    statusInfo = { text: "Rujuk", color: "bg-teal-600 text-white" };
   } else if (kunjungan.keputusan_akhir === "dihapus") {
     statusInfo = { text: "Dihapus", color: "bg-red-600 text-white" };
   }
@@ -121,10 +124,11 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
   const jenisPasien = kunjungan.jenis_pasien || "-";
   // Warna badge disamakan dengan StatCard
   const badgeColor = {
-    "Non Bedah": "bg-blue-500 text-white",
-    "Bedah": "bg-orange-500 text-white",
+    "Umum": "bg-orange-500 text-white",
     "Anak": "bg-cyan-500 text-white",
     "Kebidanan": "bg-green-500 text-white",
+    "Non Bedah": "bg-blue-500 text-white",
+    "Bedah": "bg-orange-500 text-white",
     "-": "bg-gray-100 text-gray-500"
   }[jenisPasien] || "bg-gray-100 text-gray-500";
 
@@ -288,6 +292,13 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
                       <p className="text-sm text-red-700 whitespace-pre-line">{kunjungan.alasan_hapus || "-"}</p>
                     </div>
                   )}
+                  {/* Container alasan rujuk di bawah badge 'Rujuk' */}
+                  {kunjungan.keputusan_akhir === "rujuk" && kunjungan.alasan_rujuk && (
+                    <div className="mt-3 bg-teal-50 border border-teal-200 rounded-md p-3">
+                      <h4 className="text-sm font-semibold text-teal-800 mb-1">Alasan Rujuk</h4>
+                      <p className="text-sm text-teal-700 whitespace-pre-line">{kunjungan.alasan_rujuk}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Alasan Hapus (jika pasien dihapus) */}
@@ -309,12 +320,10 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
 
 
 // 🚀 Terima 'data' dari Dashboard
-export default function PasienSelesai({ data }) {
+export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPasien, setSelectedPasien] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  
-  // State untuk filter tanggal (DD/MM/YYYY format as display)
   const [startDateDisplay, setStartDateDisplay] = useState("");
   const [endDateDisplay, setEndDateDisplay] = useState("");
   
@@ -364,13 +373,45 @@ export default function PasienSelesai({ data }) {
     }, 300); 
   };
 
-  // 🚀 Filter 'data' (prop) dengan search query dan filter tanggal
+  // Helper untuk mendapatkan waktu selesai dalam bentuk Date object (untuk filter)
+  const getWaktuSelesaiRaw = (kunjungan) => {
+    const timestamps = kunjungan.step_timestamps || {};
+    let finalTimestamp = null;
+    
+    if (kunjungan.keputusan_akhir === "dihapus") {
+      const currentStep = kunjungan.current_step || 1;
+      const stepKey = `tahap_${currentStep}`;
+      finalTimestamp = timestamps[stepKey] ? timestamps[stepKey].end_time : null;
+    } else if (kunjungan.keputusan_akhir === "rawat") {
+      finalTimestamp = timestamps["tahap_6"] ? timestamps["tahap_6"].end_time : null;
+    } else {
+      finalTimestamp = timestamps["tahap_5"] ? timestamps["tahap_5"].end_time : null;
+    }
+
+    if (!finalTimestamp) {
+      finalTimestamp = kunjungan.updated_at;
+    }
+    
+    return finalTimestamp ? new Date(finalTimestamp) : null;
+  };
+
+  // 🚀 Filter 'data' (prop) dengan search query, filter tanggal, dan filter keputusan akhir
   const filteredPasien = useMemo(() => {
     if (!data) return [];
     
-    let filtered = data.filter(kunjungan =>
-      kunjungan.pasien.nama.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let filtered = data.filter(kunjungan => {
+      const namaPasien = kunjungan.pasien.nama.toLowerCase();
+      const ruangan = (kunjungan.disposisi_ruangan || "").toLowerCase();
+      const query = searchQuery.toLowerCase();
+      
+      // Cari di nama pasien atau ruangan
+      return namaPasien.includes(query) || ruangan.includes(query);
+    });
+
+    // Filter berdasarkan keputusan akhir dari prop
+    if (keputusanAkhirFilter && keputusanAkhirFilter !== "") {
+      filtered = filtered.filter(kunjungan => kunjungan.keputusan_akhir === keputusanAkhirFilter);
+    }
 
     // Filter berdasarkan tanggal jika diisi
     if (startDateDisplay && endDateDisplay) {
@@ -405,7 +446,7 @@ export default function PasienSelesai({ data }) {
     }
     
     return filtered;
-  }, [data, searchQuery, startDateDisplay, endDateDisplay]);
+  }, [data, searchQuery, startDateDisplay, endDateDisplay, keputusanAkhirFilter]);
 
   // 🚀 (BARU) Fungsi untuk mendapatkan Waktu Selesai yang REAL
   const getWaktuSelesai = (kunjungan) => {
@@ -430,28 +471,6 @@ export default function PasienSelesai({ data }) {
     }
     
     return formatTimestamp(finalTimestamp);
-  };
-
-  // Helper untuk mendapatkan waktu selesai dalam bentuk Date object (untuk filter)
-  const getWaktuSelesaiRaw = (kunjungan) => {
-    const timestamps = kunjungan.step_timestamps || {};
-    let finalTimestamp = null;
-    
-    if (kunjungan.keputusan_akhir === "dihapus") {
-      const currentStep = kunjungan.current_step || 1;
-      const stepKey = `tahap_${currentStep}`;
-      finalTimestamp = timestamps[stepKey] ? timestamps[stepKey].end_time : null;
-    } else if (kunjungan.keputusan_akhir === "rawat") {
-      finalTimestamp = timestamps["tahap_6"] ? timestamps["tahap_6"].end_time : null;
-    } else {
-      finalTimestamp = timestamps["tahap_5"] ? timestamps["tahap_5"].end_time : null;
-    }
-
-    if (!finalTimestamp) {
-      finalTimestamp = kunjungan.updated_at;
-    }
-    
-    return finalTimestamp ? new Date(finalTimestamp) : null;
   };
 
   // Helper untuk mendapatkan durasi per tahap
@@ -523,7 +542,8 @@ export default function PasienSelesai({ data }) {
       'Durasi Tahap 6': formatDuration(getDurasiTahap(kunjungan, 6)),
       'Status Akhir': kunjungan.keputusan_akhir || '-',
       'Disposisi Ruangan': kunjungan.disposisi_ruangan || '-',
-      'Alasan Hapus': kunjungan.alasan_hapus || '-'
+      'Alasan Hapus': kunjungan.alasan_hapus || '-',
+      'Alasan Rujuk': kunjungan.alasan_rujuk || '-'
     }));
 
     const csv = Papa.unparse(csvData);
@@ -577,6 +597,7 @@ export default function PasienSelesai({ data }) {
               onClick={() => {
                 setStartDateDisplay("");
                 setEndDateDisplay("");
+                setSelectedKeputusanAkhir("semua");
               }}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-md transition-colors duration-200"
             >
@@ -587,9 +608,9 @@ export default function PasienSelesai({ data }) {
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors duration-200 whitespace-nowrap"
             >
               <Download size={16} />
-              Export CSV
+              Unduh Laporan
             </button>
-            <span className="text-xs text-gray-500 ml-auto">*Maksimal rentang 7 hari</span>
+            <span className="text-xs text-gray-500">*Maksimal rentang 7 hari</span>
           </div>
         </div>
         {/* --- Akhir Date Filter & Export Button --- */}
@@ -600,7 +621,7 @@ export default function PasienSelesai({ data }) {
             <Search size={18} className="text-gray-400" />
             <input
               type="text"
-              placeholder="Cari nama pasien..."
+              placeholder="Cari nama pasien atau ruangan..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-sm bg-transparent focus:outline-none placeholder-gray-400 text-gray-700"
@@ -615,6 +636,7 @@ export default function PasienSelesai({ data }) {
               <th className="px-6 py-3 font-semibold">Pasien</th>
               <th className="px-6 py-3 font-semibold">Tanggal Masuk</th>
               <th className="px-6 py-3 font-semibold">Waktu Selesai</th>
+              <th className="px-6 py-3 font-semibold">Ruangan</th>
               <th className="px-6 py-3 font-semibold">Status Akhir</th>
             </tr>
           </thead>
@@ -667,6 +689,15 @@ export default function PasienSelesai({ data }) {
                     textColor: "text-gray-900",
                     inisialBg: "bg-gray-300 text-gray-800"
                   };
+                } else if (keputusan_akhir === "rujuk") {
+                  statusInfo = {
+                    text: "Rujuk",
+                    icon: <ArrowRightCircle size={14} />,
+                    color: "bg-teal-100 text-teal-700",
+                    rowColor: "bg-teal-50 text-teal-900 hover:bg-teal-100 cursor-pointer",
+                    textColor: "text-teal-900",
+                    inisialBg: "bg-teal-200 text-teal-800"
+                  };
                 } else if (keputusan_akhir === "dihapus") {
                   statusInfo = {
                     text: "Dihapus",
@@ -704,6 +735,10 @@ export default function PasienSelesai({ data }) {
                       {waktuSelesai}
                     </td>
 
+                    <td className={`px-6 py-3 ${statusInfo.textColor}`}>
+                      {keputusan_akhir === "rawat" ? (kunjungan.disposisi_ruangan || "-") : "-"}
+                    </td>
+
                     <td className="px-6 py-3">
                       <span
                         className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}
@@ -717,7 +752,7 @@ export default function PasienSelesai({ data }) {
               })
             ) : (
               <tr className="border-t border-gray-200">
-                <td colSpan="4" className="text-center py-10 text-gray-500">
+                <td colSpan="5" className="text-center py-10 text-gray-500">
                   {searchQuery ? `Tidak ada pasien yang ditemukan dengan nama "${searchQuery}".` : "Tidak ada pasien selesai hari ini."}
                 </td>
               </tr>

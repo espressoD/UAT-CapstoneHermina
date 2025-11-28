@@ -41,7 +41,7 @@ export default function CekAntrian() {
   const [nomorAntrian, setNomorAntrian] = useState("");
   const [loading, setLoading] = useState(false); // 🚀 State loading baru
 
-  // 🚀 PERBARUI: handleSubmit sekarang 'async' dan memanggil API
+  // Handle submit: encode nomor antrian menjadi hash dan navigate
   const handleSubmit = async (event) => {
     event.preventDefault();
     const sanitized = nomorAntrian.replace(/\s/g, '').toUpperCase();
@@ -50,7 +50,7 @@ export default function CekAntrian() {
     setLoading(true);
 
     try {
-      // Step 1: Encode nomor antrian menjadi hash
+      // Encode nomor antrian ke hash
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       const encodeResponse = await fetch(
         `${API_URL}/api/public/encode-antrian`,
@@ -62,9 +62,9 @@ export default function CekAntrian() {
       );
 
       if (encodeResponse.ok) {
-        // SUKSES: Nomor antrian valid, dapatkan hash
+        // SUKSES: Nomor antrian valid, dapat hash
         const { hash } = await encodeResponse.json();
-        // Navigate menggunakan hash, bukan nomor antrian asli
+        // Navigate menggunakan hash (bukan nomor antrian asli)
         navigate(`/status/${hash}`);
       } else {
         // GAGAL: Tidak ditemukan, kedaluwarsa, atau sudah selesai

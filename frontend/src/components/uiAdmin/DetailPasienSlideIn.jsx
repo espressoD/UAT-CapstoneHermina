@@ -10,6 +10,7 @@ import {
   Bed,
   UserMinus,
   AlertTriangle,
+  ArrowRightCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
@@ -98,16 +99,19 @@ const AccordionItem = ({ title, icon, isOpen, onToggle, children }) => (
   </div>
 );
 const ChoiceButton = ({ label, icon, type, isSelected, onClick }) => {
-  const base = "w-full flex items-center space-x-3 p-3 rounded-lg border text-sm font-medium transition-all";
+  const base = "w-full flex items-center space-x-3 p-3 rounded-lg border text-sm font-medium transition-all duration-200 shadow";
   const styles = {
     pulang: isSelected
-      ? "bg-green-600 border-green-700 text-white shadow-md"
+      ? "bg-green-600 border-green-700 text-white shadow-md scale-[1.03]"
       : "bg-white border-gray-300 text-gray-700 hover:bg-green-50/10 hover:text-green-700",
     rawat: isSelected
-      ? "bg-orange-500 border-orange-600 text-white shadow-md"
+      ? "bg-orange-500 border-orange-600 text-white shadow-md scale-[1.03]"
       : "bg-white border-gray-300 text-gray-700 hover:bg-orange-50/10 hover:text-orange-700",
+    rujuk: isSelected
+      ? "bg-teal-600 border-teal-700 text-white shadow-md scale-[1.03]"
+      : "bg-white border-gray-300 text-gray-700 hover:bg-teal-50/10 hover:text-teal-700",
     meninggal: isSelected
-      ? "bg-black border-gray-800 text-white shadow-md"
+      ? "bg-black border-gray-800 text-white shadow-md scale-[1.03]"
       : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100",
   };
   return (
@@ -671,12 +675,16 @@ setIsDpjpDropdownOpen(true);
     if (localPatient.keputusan_akhir === "rawat" && !localPatient.dpjp) {
       alert("Harap pilih DPJP untuk pasien Rawat Inap."); return;
     }
+    if (localPatient.keputusan_akhir === "rujuk" && !localPatient.alasan_rujuk) {
+      alert("Harap isi Alasan Rujuk."); return;
+    }
     setIsTahap5ModalOpen(true);
   };
   const handleModal5Confirm = async () => {
     const payload = {
       keputusan_akhir: localPatient.keputusan_akhir,
       dpjp: localPatient.dpjp,
+      alasan_rujuk: localPatient.alasan_rujuk,
     };
     
     const status = (localPatient.keputusan_akhir === "rawat") ? "Aktif" : "Selesai";
@@ -1218,6 +1226,13 @@ setIsDpjpDropdownOpen(true);
                         onClick={() => handleChoiceChange("rawat")}
                       />
                       <ChoiceButton
+                        label="Rujuk"
+                        icon={<ArrowRightCircle size={18} />}
+                        type="rujuk"
+                        isSelected={localPatient.keputusan_akhir === "rujuk"}
+                        onClick={() => handleChoiceChange("rujuk")}
+                      />
+                      <ChoiceButton
                         label="Meninggal"
                         icon={<UserMinus size={18} />}
                         type="meninggal"
@@ -1225,6 +1240,23 @@ setIsDpjpDropdownOpen(true);
                         onClick={() => handleChoiceChange("meninggal")}
                       />
                     </div>
+
+                    {localPatient.keputusan_akhir === "rujuk" && (
+                      <div className="mt-6 pt-4 border-t border-gray-200 space-y-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 block mb-1">
+                            Alasan Rujuk: <span className="text-red-500">(wajib diisi)</span>
+                          </label>
+                          <textarea
+                            value={localPatient.alasan_rujuk || ""}
+                            onChange={(e) => setLocalPatient(prev => ({ ...prev, alasan_rujuk: e.target.value }))}
+                            placeholder="Contoh: Memerlukan fasilitas spesialis yang tidak tersedia di RS ini"
+                            rows={3}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {localPatient.keputusan_akhir === "rawat" && (
                       <div className="mt-6 pt-4 border-t border-gray-200 space-y-4">

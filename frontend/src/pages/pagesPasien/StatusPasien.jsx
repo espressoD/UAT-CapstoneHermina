@@ -311,6 +311,7 @@ export default function StatusPasien() {
 						label: "Keputusan Akhir", 
 						value: finalDecision === 'rawat' ? 'RAWAT INAP' 
 							: finalDecision === 'rawat_jalan' ? 'RAWAT JALAN'
+							: finalDecision === 'rujuk' ? 'RUJUK'
 							: finalDecision === 'meninggal' ? 'MENINGGAL'
 							: finalDecision.toUpperCase()
 					}] : []),
@@ -603,11 +604,13 @@ export default function StatusPasien() {
 																	backgroundColor: 
 																		step.finalDecision === "rawat_jalan" ? "#10B981" :
 																		step.finalDecision === "rawat" ? "#FF6F00" :
+																		step.finalDecision === "rujuk" ? "#14B8A6" :
 																		step.finalDecision === "meninggal" ? "#000000" : "#6B7280"
 																}}
 															>
 																{step.finalDecision === "rawat_jalan" ? "RAWAT JALAN" :
 																 step.finalDecision === "rawat" ? "RAWAT INAP" :
+																 step.finalDecision === "rujuk" ? "RUJUK" :
 																 step.finalDecision === "meninggal" ? "MENINGGAL" : ""}
 															</span>
 														)}
@@ -806,6 +809,7 @@ export default function StatusPasien() {
 																backgroundColor: 
 																	item.value === "RAWAT JALAN" ? "#10B981" :
 																	item.value === "RAWAT INAP" ? "#FF6F00" :
+																	item.value === "RUJUK" ? "#14B8A6" :
 																	item.value === "MENINGGAL" ? "#000000" : "#6B7280"
 															}}
 														>

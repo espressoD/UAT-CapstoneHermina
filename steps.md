@@ -85,3 +85,22 @@ Perubahan ini bertujuan meningkatkan kejelasan dan user experience setelah aksi 
 - Semua logika dan helper terkait export CSV, filter, dan format tanggal sudah diuji dan berjalan sesuai kebutuhan.
 
 Catatan: Fitur ini memudahkan admin untuk mengambil rekap pasien selesai secara cepat, akurat, dan sesuai format rumah sakit Hermina.
+
+## [27 Nov 2025] Dokumentasi Fitur Keputusan Akhir "Rujuk"
+
+- Menambahkan pilihan keputusan akhir "Rujuk" pada Tahap 5 di DetailPasienSlideIn.jsx (dashboard admin).
+- Jika "Rujuk" dipilih, muncul textarea wajib untuk input alasan rujuk (tanpa input RS tujuan).
+- Validasi: Konfirmasi Tahap 5 hanya bisa jika alasan rujuk diisi.
+- Payload frontend dan backend sudah mendukung field `alasan_rujuk`.
+- Badge "RUJUK" di dashboard IGD dan patient journey menggunakan warna teal (`bg-teal-600` di modal, `bg-teal-100` di tabel, `#14B8A6` di timeline).
+- Container alasan rujuk di modal rekap posisinya sama seperti alasan hapus, dengan warna teal.
+- Di patient journey (StatusPasien.jsx), detail deskripsi keputusan akhir "Rujuk" sama seperti rawat jalan, hanya badge dan label yang berbeda.
+- Backend (server.js) sudah menerima dan menyimpan field `alasan_rujuk` ke database.
+- Sudah diuji: flow input, validasi, tampilan badge, rekap, dan penyimpanan data berjalan sesuai kebutuhan.
+
+Catatan: Fitur ini memudahkan pencatatan pasien yang dirujuk ke RS lain, dengan alasan yang terdokumentasi dan visual konsisten di seluruh sistem.
+
+## 2025-11-29
+- Tabel Pasien Selesai: tambah kolom "Ruangan". Hanya terisi jika keputusan akhir pasien adalah rawat inap, menampilkan field `disposisi_ruangan`.
+- Fitur pencarian pada tabel Pasien Selesai kini bisa mencari nama pasien maupun nama ruangan (case-insensitive).
+- Placeholder input search diubah menjadi "Cari nama pasien atau ruangan...".

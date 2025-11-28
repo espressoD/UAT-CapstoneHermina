@@ -29,6 +29,7 @@ export default function InputPasienBaru() {
   });
 
   const [popupType, setPopupType] = useState(null); // "error", "confirm", "success"
+  const [isSubmitting, setIsSubmitting] = useState(false); // Prevent double submission
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -47,6 +48,9 @@ export default function InputPasienBaru() {
   };
 
 const handleConfirmSave = async () => {
+  // Prevent double submission
+  if (isSubmitting) return;
+  
   if (!session || !session.access_token) {
     console.error("Sesi tidak ditemukan. Harap login ulang.");
     setPopupType(null);
@@ -54,6 +58,8 @@ const handleConfirmSave = async () => {
     return;
   }
 
+  setIsSubmitting(true);
+  
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       const response = await fetch(`${API_URL}/api/v2/kunjungan`, {
@@ -82,6 +88,8 @@ const handleConfirmSave = async () => {
       console.error("Terjadi error saat menyimpan:", error);
       setPopupType(null); 
       alert(`Terjadi kesalahan jaringan: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -218,10 +226,9 @@ const handleConfirmSave = async () => {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1 bg-gray-50 focus:ring-2 focus:ring-green-600 focus:outline-none"
                 >
                     <option value="">Pilih jenis pasien...</option>
+                    <option value="Umum">Umum</option>
                     <option value="Anak">Anak</option>
                     <option value="Kebidanan">Kebidanan</option>
-                    <option value="Bedah">Bedah</option>
-                    <option value="Non Bedah">Non Bedah</option>
                 </select>
                 </div>
               </div>
@@ -366,13 +373,15 @@ const handleConfirmSave = async () => {
                   <div className="flex justify-center gap-3">
                     <button
                       onClick={handleConfirmSave}
-                      className="bg-green-700 hover:bg-green-800 text-white px-5 py-2 rounded-md font-medium"
+                      disabled={isSubmitting}
+                      className="bg-green-700 hover:bg-green-800 text-white px-5 py-2 rounded-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Ya, Simpan
+                      {isSubmitting ? "Menyimpan..." : "Ya, Simpan"}
                     </button>
                     <button
                       onClick={handleClosePopup}
-                      className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-5 py-2 rounded-md font-medium"
+                      disabled={isSubmitting}
+                      className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-5 py-2 rounded-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Batal
                     </button>

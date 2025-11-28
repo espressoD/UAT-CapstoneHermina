@@ -32,21 +32,22 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("aktif");
   const { session, userProfile, loading: authLoading } = useAuth();
-  
+
   // Determine initial unit and tab visibility based on user role
   const getInitialUnit = () => {
     if (userProfile?.role === 'perawat_kamala') return 'Kamala';
     if (userProfile?.role === 'perawat_padma') return 'Padma';
     return unit;
   };
-  
+
   const shouldHideUnitTabs = () => {
     // Hide tabs for perawat roles or when explicitly set
     return hideUnitTabs || userProfile?.role === 'perawat_kamala' || userProfile?.role === 'perawat_padma';
   };
-  
+
   const [activeUnit, setActiveUnit] = useState(getInitialUnit()); // Default dari prop atau role
   const [jenisFilter, setJenisFilter] = useState(""); // State filter jenis pasien
+  const [keputusanAkhirFilter, setKeputusanAkhirFilter] = useState("");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -68,7 +69,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       devLog("Header ready set to true");
     }
   }, [authLoading, userProfile]);
-  
+
   // Effect untuk set activeUnit berdasarkan role saat userProfile berubah
   useEffect(() => {
     if (userProfile) {
@@ -86,10 +87,10 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       devLog("Data sudah di-fetch dan auth masih loading, skip re-fetch");
       return;
     }
-    
+
     const fetchData = async () => {
       setLoading(true);
-      
+
       // Tunggu auth selesai loading dan session tersedia
       if (authLoading) {
         devLog("Auth masih loading...");
@@ -101,11 +102,11 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         devLog("Menunggu sesi untuk fetch data...");
         setLoading(false);
         return; // Berhenti di sini
-        }
+      }
 
-        const authHeader = {
-          'Authorization': `Bearer ${session.access_token}`
-        };
+      const authHeader = {
+        'Authorization': `Bearer ${session.access_token}`
+      };
 
       try {
         const [
@@ -135,14 +136,14 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         setPerawatList(perawatData);
         setDokterGpList(gpData);
         setDokterDpjpList(dpjpData);
-        
+
         // Tandai sudah fetch hanya sekali
         if (!hasFetchedData.current) {
           hasFetchedData.current = true;
           devLog("Initial data fetch complete");
         }
 
-      } catch (error) { 
+      } catch (error) {
         devError("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);
@@ -153,20 +154,20 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
     if (!hasFetchedData.current && !authLoading && session) {
       fetchData();
     }
-    
+
   }, [session, authLoading]); // Keep dependencies but use ref to prevent re-fetch
-  
+
   // Separate useEffect for realtime subscription
   useEffect(() => {
     if (!session?.access_token) return;
-    
+
     const channel = supabase
       .channel('db-kunjungan-changes')
       .on(
         'postgres_changes',
-        { 
+        {
           event: '*',
-          schema: 'public', 
+          schema: 'public',
           table: 'kunjungan'
         },
         (payload) => {
@@ -174,7 +175,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
           // Re-fetch data saat ada perubahan
           const refetchData = async () => {
             if (!session?.access_token) return;
-            
+
             try {
               const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
               const res = await fetch(`${API_URL}/api/v2/kunjungan`, {
@@ -201,14 +202,14 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
   // Realtime subscription untuk tabel settings (petugas jaga, ESI, dll)
   useEffect(() => {
     if (!session?.access_token) return;
-    
+
     const settingsChannel = supabase
       .channel('db-settings-changes')
       .on(
         'postgres_changes',
-        { 
+        {
           event: '*',
-          schema: 'public', 
+          schema: 'public',
           table: 'settings'
         },
         (payload) => {
@@ -239,7 +240,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
   const pasienSelesai = useMemo(() => {
     const now = Date.now();
     const hours168InMs = 168 * 60 * 60 * 1000; // 168 jam dalam milidetik
-    
+
     const filtered = allKunjungan.filter((k) => {
       // Filter status selesai
       if (!k.status_kunjungan || k.status_kunjungan.toLowerCase() !== "selesai") {
@@ -250,11 +251,11 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       if (activeUnit === "Kamala" && !KAMALA_PENJAMIN.includes(k.penjamin)) return false;
       // Filter jenis pasien
       if (jenisFilter && k.jenis_pasien !== jenisFilter) return false;
-      
+
       // Dapatkan waktu selesai dari step_timestamps
       const timestamps = k.step_timestamps || {};
       let waktuSelesai = null;
-      
+
       // Jika pasien dihapus, ambil end_time dari step terakhir yang ada
       if (k.keputusan_akhir === "dihapus") {
         const currentStep = k.current_step || 1;
@@ -268,7 +269,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       // Jika rawat inap, ambil dari tahap_6.end_time
       else if (k.keputusan_akhir === "rawat" && timestamps.tahap_6?.end_time) {
         waktuSelesai = new Date(timestamps.tahap_6.end_time).getTime();
-      } 
+      }
       // Jika bukan rawat inap, ambil dari tahap_5.end_time
       else if (timestamps.tahap_5?.end_time) {
         waktuSelesai = new Date(timestamps.tahap_5.end_time).getTime();
@@ -277,13 +278,13 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       else if (k.updated_at) {
         waktuSelesai = new Date(k.updated_at).getTime();
       }
-      
+
       // Filter hanya yang selesai dalam 168 jam terakhir
       if (waktuSelesai) {
         const selisih = now - waktuSelesai;
         return selisih <= hours168InMs;
       }
-      
+
       return false;
     });
 
@@ -308,7 +309,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         }
         return 0;
       };
-      
+
       return getWaktuSelesai(b) - getWaktuSelesai(a); // Descending (terbaru di atas)
     });
   }, [allKunjungan, activeUnit, jenisFilter]);
@@ -316,10 +317,9 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
   // Statistik hanya mengikuti unit dan status aktif, tidak filter jenis pasien
   const statCounts = useMemo(() => {
     const counts = {
-      "Non Bedah": 0,
+      "Umum": 0,
       "Anak": 0,
       "Kebidanan": 0,
-      "Bedah": 0,
     };
     allKunjungan.forEach((k) => {
       if (
@@ -347,7 +347,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         k.id === updatedKunjungan.id ? updatedKunjungan : k
       )
     );
-    
+
     setSelectedPatient(updatedKunjungan);
   };
 
@@ -380,15 +380,13 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         className="mt-6"
       >
         {activeTab === "aktif" ? (
-          // Kirim data 'pasienAktif' sebagai prop
           <PasienTable
             data={pasienAktif}
             onPatientSelect={handlePatientSelect}
             unit={activeUnit}
           />
         ) : (
-          // Kirim data 'pasienSelesai' sebagai prop
-          <PasienSelesai data={pasienSelesai} />
+          <PasienSelesai data={pasienSelesai} keputusanAkhirFilter={keputusanAkhirFilter} />
         )}
       </motion.div>
     );
@@ -430,19 +428,22 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6"
+            className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6"
           >
             {/* Ganti 'count' dengan data dinamis dari 'statCounts' */}
-            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6 h-full">
-              <StatCard title="Pasien Non-Bedah" count={statCounts["Non Bedah"]} icon={<Users size={24} />} color="bg-blue-500" />
-              <StatCard title="Pasien Anak" count={statCounts["Anak"]} icon={<Baby size={24} />} color="bg-cyan-500" />
-              <StatCard title="Pasien Kebidanan" count={statCounts["Kebidanan"]} icon={<Activity size={24} />} color="bg-green-500" />
-              <StatCard title="Pasien Bedah" count={statCounts["Bedah"]} icon={<User size={24} />} color="bg-orange-500" />
+            <div className="grid grid-cols-1 gap-6 h-full">
+              <div className="w-full">
+                <StatCard title="Pasien Umum" count={statCounts["Umum"]} icon={<Users size={24} />} color="bg-orange-500" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <StatCard title="Pasien Anak" count={statCounts["Anak"]} icon={<Baby size={24} />} color="bg-cyan-500" />
+                <StatCard title="Pasien Kebidanan" count={statCounts["Kebidanan"]} icon={<Activity size={24} />} color="bg-green-500" />
+              </div>
             </div>
             <PetugasJagaCard
-            key={petugasJagaKey}
-            perawatData={perawatList}
-            dokterGpData={dokterGpList} />
+              key={petugasJagaKey}
+              perawatData={perawatList}
+              dokterGpData={dokterGpList} />
           </motion.div>
         )}
 
@@ -467,11 +468,10 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             {/* Tombol Unit Padma */}
             <button
               onClick={() => setActiveUnit("Padma")}
-              className={`px-6 py-3 rounded-lg font-bold text-base transition-all duration-200 shadow-sm ${
-                activeUnit === "Padma"
-                  ? "bg-purple-500 text-white border-b-4 border-purple-700"
-                  : "bg-gray-100 text-gray-700 hover:bg-purple-100 hover:text-purple-700"
-              }`}
+              className={`px-6 py-3 rounded-lg font-bold text-base transition-all duration-200 shadow-sm ${activeUnit === "Padma"
+                ? "bg-purple-500 text-white border-b-4 border-purple-700"
+                : "bg-gray-100 text-gray-700 hover:bg-purple-100 hover:text-purple-700"
+                }`}
               style={{ minWidth: 180 }}
             >
               Unit Padma
@@ -479,11 +479,10 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             {/* Tombol Unit Kamala */}
             <button
               onClick={() => setActiveUnit("Kamala")}
-              className={`px-6 py-3 rounded-lg font-bold text-base transition-all duration-200 shadow-sm ${
-                activeUnit === "Kamala"
-                  ? "bg-pink-400 text-white border-b-4 border-pink-600"
-                  : "bg-gray-100 text-gray-700 hover:bg-pink-100 hover:text-pink-600"
-              }`}
+              className={`px-6 py-3 rounded-lg font-bold text-base transition-all duration-200 shadow-sm ${activeUnit === "Kamala"
+                ? "bg-pink-400 text-white border-b-4 border-pink-600"
+                : "bg-gray-100 text-gray-700 hover:bg-pink-100 hover:text-pink-600"
+                }`}
               style={{ minWidth: 180 }}
             >
               Unit Kamala
@@ -500,7 +499,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             </motion.button>
           </div>
         )}
-        
+
         {/* Tombol Input Pasien Baru untuk perawat (ketika unit tabs hidden) */}
         {shouldHideUnitTabs() && (
           <div className="mt-8 flex justify-end border-b border-gray-300 pb-2">
@@ -523,19 +522,17 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-all duration-200 ${
-                  activeTab === tab
+                className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-all duration-200 ${activeTab === tab
                     ? "bg-green-100 text-green-700 border-b-2 border-green-600"
                     : "text-gray-500 hover:text-green-600"
-                }`}
+                  }`}
                 style={{ minWidth: 140 }}
               >
                 {tab === "aktif" ? "Pasien Aktif" : "Pasien Selesai Hari Ini"}
               </button>
             ))}
           </div>
-          {/* Filter Jenis Pasien - Dropdown, posisinya di bawah tombol input pasien baru */}
-          <div className="flex flex-row justify-end flex-1">
+          <div className="flex flex-row justify-end items-center gap-2 flex-1">
             <select
               value={jenisFilter}
               onChange={e => setJenisFilter(e.target.value)}
@@ -543,17 +540,32 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
               style={{ minWidth: 160 }}
             >
               <option value="">Semua Jenis Pasien</option>
-              <option value="Non Bedah">Non Bedah</option>
-              <option value="Bedah">Bedah</option>
+              <option value="Umum">Umum</option>
               <option value="Anak">Anak</option>
               <option value="Kebidanan">Kebidanan</option>
             </select>
+            {activeTab === "selesai" && (
+              <select
+                value={keputusanAkhirFilter}
+                onChange={e => setKeputusanAkhirFilter(e.target.value)}
+                className="px-4 py-2 rounded-lg font-semibold text-sm bg-gray-100 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-400"
+                style={{ minWidth: 160 }}
+              >
+                <option value="">Semua Keputusan Akhir</option>
+                <option value="rawat">Rawat Inap</option>
+                <option value="rawat_jalan">Rawat Jalan</option>
+                <option value="rujuk">Rujuk</option>
+                <option value="meninggal">Meninggal</option>
+                <option value="dihapus">Dihapus</option>
+              </select>
+            )}
           </div>
         </div>
 
         {/* TAB CONTENT (Sudah di-handle 'renderTabContent') */}
         <AnimatePresence mode="wait">{renderTabContent()}</AnimatePresence>
       </div>
+      
 
       {/* SLIDE DETAIL PASIEN (Tidak berubah) */}
       <DetailPasienSlideIn

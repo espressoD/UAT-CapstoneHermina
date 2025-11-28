@@ -304,7 +304,8 @@ app.patch('/api/v2/kunjungan/:id', async (req, res) => {
     keputusan_akhir,
     disposisi_ruangan,
     step_timestamps,
-    alasan_hapus
+    alasan_hapus,
+    alasan_rujuk
   } = req.body;
 
   const updateData = {};
@@ -327,6 +328,7 @@ app.patch('/api/v2/kunjungan/:id', async (req, res) => {
   if (disposisi_ruangan !== undefined) updateData.disposisi_ruangan = disposisi_ruangan;
   if (step_timestamps !== undefined) updateData.step_timestamps = step_timestamps;
   if (alasan_hapus !== undefined) updateData.alasan_hapus = alasan_hapus;
+  if (alasan_rujuk !== undefined) updateData.alasan_rujuk = alasan_rujuk;
 
   if (Object.keys(updateData).length === 0) {
     return res.status(400).json({ error: 'Tidak ada data untuk di-update.' });
@@ -797,6 +799,42 @@ app.put('/api/v2/settings', async (req, res) => {
 });
 
 // Endpoint untuk encode nomor antrian (cek manual)
+// Endpoint untuk validasi nomor antrian (tanpa encoding)
+app.post('/api/public/validate-antrian', async (req, res) => {
+  const { nomor_antrian } = req.body;
+  
+  if (!nomor_antrian) {
+    return res.status(400).json({ error: 'Nomor antrian wajib diisi.' });
+  }
+  
+  const nomorProcessed = nomor_antrian.toUpperCase().replace(/\s/g, '');
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  
+  try {
+    // Verifikasi bahwa nomor antrian valid dan aktif (dalam 24 jam terakhir)
+    const { data: dataKunjungan, error: errorKunjungan } = await supabase
+      .from('kunjungan')
+      .select('id, nomor_antrian, created_at')
+      .eq('nomor_antrian', nomorProcessed)
+      .gte('created_at', twentyFourHoursAgo)
+      .single();
+    
+    if (errorKunjungan || !dataKunjungan) {
+      return res.status(404).json({ error: 'Nomor antrian tidak ditemukan atau sudah kedaluwarsa.' });
+    }
+    
+    // Return nomor antrian yang valid
+    res.json({ 
+      nomor_antrian: dataKunjungan.nomor_antrian,
+      valid: true
+    });
+  } catch (error) {
+    console.error('Error validating nomor antrian:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan server.' });
+  }
+});
+
+// Endpoint lama untuk backward compatibility (encode-antrian)
 app.post('/api/public/encode-antrian', async (req, res) => {
   const { nomor_antrian } = req.body;
   
@@ -822,7 +860,8 @@ app.post('/api/public/encode-antrian', async (req, res) => {
     
     // Untuk format baru (InisialXXX), extract komponen:
     // Contoh: MR075 -> inisial="MR", urutan=75
-    const match = nomorProcessed.match(/^([A-Z]+)(\d{3})$/);
+    // Support 3-5 digits untuk handle overflow (hingga 99999)
+    const match = nomorProcessed.match(/^([A-Z]+)(\d{3,5})$/);
     
     let hashedId;
     if (match) {
@@ -887,10 +926,10 @@ app.get('/api/public/status', async (req, res) => {
     return res.status(400).json({ error: 'Nomor antrian wajib diisi.' });
   }
   
-  // Coba decode hash terlebih dahulu
-  const decodedComponents = hashids.decode(q);
-  
   let nomorAntrian = null;
+  
+  // Prioritas 1: Coba decode sebagai hash terlebih dahulu
+  const decodedComponents = hashids.decode(q);
   
   if (decodedComponents && decodedComponents.length > 0) {
     // Hash valid, reconstruct nomor antrian dari components
@@ -901,23 +940,22 @@ app.get('/api/public/status', async (req, res) => {
     
     if (hasCharCodes) {
       // Format baru: [charCode1, charCode2, ..., urutan]
-      // Contoh: [77, 82, 75] -> "MR" + "075"
       const inisial = [];
       let urutan = null;
       
       for (let i = 0; i < decodedComponents.length; i++) {
         const val = decodedComponents[i];
         if (val >= 65 && val <= 90) {
-          // Char code untuk huruf A-Z
           inisial.push(String.fromCharCode(val));
-        } else if (val < 1000) {
-          // Angka urutan (biasanya di akhir)
+        } else {
           urutan = val;
         }
       }
       
       if (inisial.length > 0 && urutan !== null) {
-        nomorAntrian = `${inisial.join('')}${String(urutan).padStart(3, '0')}`;
+        // Gunakan padding dinamis berdasarkan ukuran urutan
+        const padding = urutan > 999 ? (urutan > 9999 ? 5 : 4) : 3;
+        nomorAntrian = `${inisial.join('')}${String(urutan).padStart(padding, '0')}`;
         devLog(`Reconstructed nomor antrian (new format): ${nomorAntrian}`);
       }
     } else {
@@ -927,14 +965,13 @@ app.get('/api/public/status', async (req, res) => {
         nomorAntrian = `${String(dd).padStart(2, '0')}${String(mm).padStart(2, '0')}${String(hh).padStart(2, '0')}${String(xxx).padStart(3, '0')}`;
         devLog(`Reconstructed nomor antrian (old format): ${nomorAntrian}`);
       } else {
-        // Fallback: join components
         nomorAntrian = decodedComponents.join('');
       }
     }
   } else {
-    // Bukan hash, mungkin nomor antrian langsung (backward compatibility)
+    // Prioritas 2: Jika bukan hash, anggap sebagai nomor antrian langsung (backward compatible)
     nomorAntrian = q.toUpperCase();
-    devLog(`Using direct nomor antrian: ${nomorAntrian}`);
+    devLog(`Using direct nomor antrian (backward compatible): ${nomorAntrian}`);
   }
   
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
