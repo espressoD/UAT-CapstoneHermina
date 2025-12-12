@@ -13,11 +13,12 @@ import logoHermina from "../../assets/logo-hermina-baru.svg";
 import { useAuth } from "../../context/AuthContext";
 import { getDashboardRoute } from "../../utils/navigationHelper";
 import PrintableTicket from "../../components/uiAdmin/PrintableTicket";
+import { createKunjungan } from "../../config/api";
 
 export default function InputPasienBaru() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { session, userProfile } = useAuth();
+  const { isAuthenticated, userProfile } = useAuth();
   
   // Ambil bed number dari navigation state (jika ada)
   const bedNumber = location.state?.bedNumber || null;
@@ -74,8 +75,8 @@ const handleConfirmSave = async () => {
   // Prevent double submission
   if (isSubmitting) return;
   
-  if (!session || !session.access_token) {
-    console.error("Sesi tidak ditemukan. Harap login ulang.");
+  if (!isAuthenticated) {
+    console.error("User tidak authenticated. Harap login ulang.");
     setPopupType(null);
     alert("Sesi Anda berakhir. Harap login ulang.");
     return;
@@ -84,26 +85,7 @@ const handleConfirmSave = async () => {
   setIsSubmitting(true);
   
   try {
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    const response = await fetch(`${API_URL}/api/v2/kunjungan`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify(formData),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Error dari server:', errorData);
-      setPopupType(null);
-      setIsSubmitting(false);
-      alert(`Gagal menyimpan: ${errorData.error || 'Terjadi kesalahan pada server'}`);
-      return;
-    }
-
-    const dataYangDisimpan = await response.json();
+    const dataYangDisimpan = await createKunjungan(formData);
     console.log('Data kunjungan berhasil disimpan:', dataYangDisimpan);
 
     // Simpan data kunjungan untuk print tiket
@@ -117,7 +99,7 @@ const handleConfirmSave = async () => {
     console.error("Terjadi error saat menyimpan:", error);
     setPopupType(null); 
     setIsSubmitting(false);
-    alert(`Terjadi kesalahan jaringan: ${error.message}`);
+    alert(`Gagal menyimpan: ${error.message || 'Terjadi kesalahan'}`);
   }
 };
 

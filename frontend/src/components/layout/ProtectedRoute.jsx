@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProtectedRoute({ children, allowedRoles }) {
-  const { userProfile, loading } = useAuth();
+  const { userProfile, loading, isAuthenticated } = useAuth();
 
   if (loading) {
     return (
@@ -13,7 +13,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     );
   }
 
-  if (!userProfile) {
+  if (!isAuthenticated || !userProfile) {
     return <Navigate to="/admin/login" replace />;
   }
 

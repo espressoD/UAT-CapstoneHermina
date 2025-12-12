@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import logoHermina from "../../assets/logo-hermina-baru.svg";
-import { supabase } from "../../supabaseClient";
+import { login } from "../../config/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function LoginAdmin() {
   const [nip, setNip] = useState("");
@@ -15,6 +16,7 @@ export default function LoginAdmin() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { updateAuthState } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -29,50 +31,22 @@ export default function LoginAdmin() {
     }
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      
-      // Call backend login endpoint
-      const response = await fetch(`${API_URL}/api/v2/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id_pegawai: nip,
-          password: password
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login gagal');
-      }
+      // Call backend login endpoint using API service
+      const data = await login(nip, password);
 
       console.log('[LOGIN] Response data:', data);
 
-      // PENTING: Simpan profile ke localStorage SEBELUM setSession
-      // AuthContext akan membaca dari localStorage ini
+      // Update auth state with profile
       if (data.profile) {
-        localStorage.setItem('userProfile', JSON.stringify(data.profile));
-        console.log('[LOGIN] Profile saved to localStorage:', data.profile);
-      }
-
-      // Set session in Supabase client
-      if (data.session) {
-        await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
-        });
-        console.log('[LOGIN] Session set in Supabase client');
+        updateAuthState(data.profile);
+        console.log('[LOGIN] Auth state updated with profile:', data.profile);
       }
 
       // Show success message
       setShowSuccess(true);
 
-      // Wait untuk AuthContext update state, then navigate
-      // Gunakan delay yang cukup untuk memastikan onAuthStateChange selesai
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Wait for state update, then navigate
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       console.log('[LOGIN] Navigating to dashboard, role:', data.profile?.role);
       if (data.profile?.role === 'perawat_kamala') {

@@ -13,6 +13,7 @@ import DetailPasienSlideIn from "../../components/uiAdmin/DetailPasienSlideIn";
 import PasienSelesai from "./PasienSelesai";
 import { useAuth } from "../../context/AuthContext";
 import AdminInfoSkeleton from "../../components/ui/AdminInfoSkeleton";
+import { getKunjungan, getPerawat, getDokterGP, getDokterDPJP } from "../../config/api";
 
 // Helper function to log only in development
 const devLog = (...args) => {
@@ -30,7 +31,7 @@ const devError = (...args) => {
 export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, showHeader = true }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("aktif");
-  const { session, userProfile, loading: authLoading } = useAuth();
+  const { isAuthenticated, userProfile, loading: authLoading } = useAuth();
 
   // Determine initial unit and tab visibility based on user role
   const getInitialUnit = () => {
@@ -90,47 +91,31 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
     const fetchData = async () => {
       setLoading(true);
 
-      // Tunggu auth selesai loading dan session tersedia
+      // Tunggu auth selesai loading dan authenticated
       if (authLoading) {
         devLog("Auth masih loading...");
         setLoading(false);
         return;
       }
 
-      if (!session || !session.access_token) {
-        devLog("Menunggu sesi untuk fetch data...");
+      if (!isAuthenticated) {
+        devLog("User belum authenticated, menunggu...");
         setLoading(false);
-        return; // Berhenti di sini
+        return;
       }
 
-      const authHeader = {
-        'Authorization': `Bearer ${session.access_token}`
-      };
-
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
         const [
-          kunjunganRes,
-          perawatRes,
-          gpRes,
-          dpjpRes
+          kunjunganResult,
+          perawatData,
+          gpData,
+          dpjpData
         ] = await Promise.all([
-          fetch(`${API_URL}/api/v2/kunjungan?status=Aktif`, { headers: authHeader }),
-          fetch(`${API_URL}/api/v2/perawat`, { headers: authHeader }),
-          fetch(`${API_URL}/api/v2/dokter-gp`, { headers: authHeader }),
-          fetch(`${API_URL}/api/v2/dokter-dpjp`, { headers: authHeader })
+          getKunjungan({ status: 'Aktif' }),
+          getPerawat(),
+          getDokterGP(),
+          getDokterDPJP()
         ]);
-
-        // Cek semua response
-        if (!kunjunganRes.ok) throw new Error("Gagal mengambil data kunjungan");
-        if (!perawatRes.ok) throw new Error("Gagal mengambil data perawat");
-        if (!gpRes.ok) throw new Error("Gagal mengambil data dokter GP");
-        if (!dpjpRes.ok) throw new Error("Gagal mengambil data dokter DPJP");
-
-        const kunjunganResult = await kunjunganRes.json();
-        const perawatData = await perawatRes.json();
-        const gpData = await gpRes.json();
-        const dpjpData = await dpjpRes.json();
 
         // Handle new response structure from backend
         const kunjunganData = kunjunganResult.data || kunjunganResult;
@@ -152,16 +137,16 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       }
     };
 
-    // Hanya fetch jika belum pernah fetch ATAU session baru tersedia
-    if (!hasFetchedData.current && !authLoading && session) {
+    // Hanya fetch jika belum pernah fetch ATAU isAuthenticated baru tersedia
+    if (!hasFetchedData.current && !authLoading && isAuthenticated) {
       fetchData();
     }
 
-  }, [session, authLoading]); // Keep dependencies but use ref to prevent re-fetch
+  }, [isAuthenticated, authLoading]); // Keep dependencies but use ref to prevent re-fetch
 
   // Separate useEffect for realtime subscription
   useEffect(() => {
-    if (!session?.access_token) return;
+    if (!isAuthenticated) return;
 
     let refetchTimeout;
 
@@ -182,18 +167,12 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
           
           // Debounce refetch dengan delay minimal (200ms) untuk batch updates
           refetchTimeout = setTimeout(async () => {
-            if (!session?.access_token) return;
+            if (!isAuthenticated) return;
 
             try {
-              const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-              const res = await fetch(`${API_URL}/api/v2/kunjungan?status=Aktif`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
-              });
-              if (res.ok) {
-                const result = await res.json();
-                const data = result.data || result;
-                setAllKunjungan(data);
-              }
+              const result = await getKunjungan({ status: 'Aktif' });
+              const data = result.data || result;
+              setAllKunjungan(data);
             } catch (error) {
               devError("Error refetching kunjungan:", error);
             }
@@ -206,11 +185,11 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       clearTimeout(refetchTimeout);
       supabase.removeChannel(channel);
     };
-  }, [session]); // Setup subscription when session is ready
+  }, [isAuthenticated]); // Setup subscription when authenticated
 
   // Realtime subscription untuk tabel settings (petugas jaga, ESI, dll)
   useEffect(() => {
-    if (!session?.access_token) return;
+    if (!isAuthenticated) return;
 
     const settingsChannel = supabase
       .channel('db-settings-changes')
@@ -232,7 +211,7 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
     return () => {
       supabase.removeChannel(settingsChannel);
     };
-  }, [session]);
+  }, [isAuthenticated]);
 
   // Filter unit
   const PADMA_PENJAMIN = ["Umum", "Asuransi Lainnya"];

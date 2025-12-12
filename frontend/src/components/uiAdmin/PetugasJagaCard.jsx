@@ -1,6 +1,7 @@
 // src/components/uiAdmin/PetugasJagaCard.jsx
 import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { getSettings } from '../../config/api';
 
 // Komponen bar (padding p-2.5)
 const PetugasList = ({ title, list, bgColor, textColor, borderColor }) => {
@@ -51,10 +52,7 @@ export default function PetugasJagaCard({
     // Load data dari database via API
     const fetchPetugasJaga = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/settings`);
-        if (response.ok) {
-          const data = await response.json();
+        const data = await getSettings();
           
           if (data.petugas_jaga) {
             // Format Penanggung Jawab - maksimal 2
@@ -69,11 +67,6 @@ export default function PetugasJagaCard({
             const dokterList = (data.petugas_jaga.dokterIgdJaga || []).slice(0, 3).map(d => d.nama);
             setDokterIgd(dokterList);
           }
-        } else {
-          if (import.meta.env.DEV) {
-            console.error('Failed to fetch petugas jaga settings');
-          }
-        }
       } catch (error) {
         if (import.meta.env.DEV) {
           console.error('Error loading Petugas Jaga settings:', error);

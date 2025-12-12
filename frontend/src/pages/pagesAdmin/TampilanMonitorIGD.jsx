@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import logoHermina from "../../assets/logo-hermina-baru.svg";
 import { supabase } from "../../supabaseClient";
+import { getSettings, getKunjunganPublic } from "../../config/api";
 
 // Helper function to log only in development
 const devLog = (...args) => {
@@ -179,17 +180,13 @@ const TotalLiveTimer = ({ startTime, triase }) => {
   useEffect(() => {
     const fetchEsiSettings = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/settings`);
-        if (response.ok) {
-          const data = await response.json();
+        const data = await getSettings();
           setEsiSettings({
             kuningJam: data.esi_kuning_jam,
             kuningMenit: data.esi_kuning_menit,
             merahJam: data.esi_merah_jam,
             merahMenit: data.esi_merah_menit
           });
-        }
       } catch (error) {
         devError('Error loading ESI settings:', error);
       }
@@ -247,25 +244,9 @@ export default function TampilanMonitorIGD({ unit }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/public/monitor`);
-        if (!response.ok) throw new Error("Gagal mengambil data kunjungan");
-        const data = await response.json();
-        
-        // Filter hanya pasien aktif dan sesuai unit
-        let aktif = data.filter(
-          (k) => k.status_kunjungan && k.status_kunjungan.toLowerCase() === "aktif"
-        );
-        if (unit === "kamala") {
-          aktif = aktif.filter(
-            (k) => k.penjamin && k.penjamin.toLowerCase() === "jkn"
-          );
-        } else if (unit === "padma") {
-          aktif = aktif.filter(
-            (k) => k.penjamin && ["umum", "asuransi lainnya"].includes(k.penjamin.toLowerCase())
-          );
-        }
-        setPasienAktif(aktif);
+        // Data already filtered by backend (unit + active beds)
+        const data = await getKunjunganPublic(unit);
+        setPasienAktif(data);
       } catch (error) {
         devError("Error fetching data:", error);
       } finally {

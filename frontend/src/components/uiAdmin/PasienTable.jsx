@@ -15,6 +15,13 @@ import {
   Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { 
+  getSettings, 
+  getBedsByUnit, 
+  createBed, 
+  deleteBed, 
+  updateKunjungan 
+} from "../../config/api";
 
 // --- Helper untuk format durasi (Tidak berubah) ---
 const formatDuration = (milliseconds) => {
@@ -93,10 +100,7 @@ const TotalLiveTimer = ({ startTime, triase, unit = "kamala" }) => {
   useEffect(() => {
     const fetchEsiSettings = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/settings`);
-        if (response.ok) {
-          const data = await response.json();
+        const data = await getSettings();
           // Load unit-specific ESI settings
           const unitKey = unit.toLowerCase() === "padma" ? "esi_padma" : "esi_kamala";
           if (data[unitKey]) {
@@ -115,7 +119,6 @@ const TotalLiveTimer = ({ startTime, triase, unit = "kamala" }) => {
               merahMenit: data.esi_merah_menit
             });
           }
-        }
       } catch (error) {
         console.error('Error loading ESI settings:', error);
       }
@@ -213,10 +216,7 @@ const ProsesSteps = ({ currentStep, createdAt, stepTimestamps, totalSteps = 6, o
   useEffect(() => {
     const fetchBatasWaktu = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/settings`);
-        if (response.ok) {
-          const data = await response.json();
+        const data = await getSettings();
           // Load unit-specific timing settings
           const unitKey = unit.toLowerCase() === "padma" ? "batas_waktu_padma" : "batas_waktu_kamala";
           if (data[unitKey]) {
@@ -225,7 +225,6 @@ const ProsesSteps = ({ currentStep, createdAt, stepTimestamps, totalSteps = 6, o
             // Fallback to old settings if unit-specific not found
             setBatasWaktu(data.batas_waktu_tahap);
           }
-        }
       } catch (error) {
         console.error('Error loading batas waktu:', error);
       }
@@ -423,14 +422,7 @@ export default function PasienTable({ data, onPatientSelect, unit = "kamala", on
   useEffect(() => {
     const fetchBeds = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/beds/${unit}`);
-        
-        if (!response.ok) {
-          throw new Error('Gagal mengambil data beds');
-        }
-
-        const bedsData = await response.json();
+        const bedsData = await getBedsByUnit(unit);
         
         // Sort beds berdasarkan bed_number
         const sortedBeds = bedsData.sort((a, b) => {
@@ -568,24 +560,10 @@ export default function PasienTable({ data, onPatientSelect, unit = "kamala", on
     }
     
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/beds`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const newBed = await createBed({
           bed_number: bedNumber,
           unit: unit.toLowerCase()
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Gagal menambah bed');
-      }
-
-      const newBed = await response.json();
+        });
       
       // Add new bed and sort
       const updatedBeds = [...beds, newBed].sort((a, b) => {
@@ -631,15 +609,7 @@ export default function PasienTable({ data, onPatientSelect, unit = "kamala", on
   // Konfirmasi delete bed
   const confirmDeleteBed = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/beds/${deleteModal.bedDbId}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Gagal menghapus bed');
-      }
+      await deleteBed(deleteModal.bedDbId);
 
       // Remove from local state
       setBeds(beds.filter(bed => bed.id !== deleteModal.bedDbId));
@@ -704,20 +674,9 @@ export default function PasienTable({ data, onPatientSelect, unit = "kamala", on
 
     // Update bed number pasien via API
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/kunjungan/${draggedPatient.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await updateKunjungan(draggedPatient.id, {
           bed_number: targetBedId
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Gagal memindahkan pasien');
-      }
+        });
 
       // TIDAK call onDataUpdate() - biarkan realtime subscription handle sync
       // Ini mencegah race condition antara optimistic update dan parent refetch

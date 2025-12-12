@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import logoHermina from "../../assets/logo-hermina-baru.svg";
 import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../supabaseClient";
+import { logout } from "../../config/api";
 
 export default function AdminHeader({ activeUnit }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -14,7 +14,7 @@ export default function AdminHeader({ activeUnit }) {
   const [currentTime, setCurrentTime] = useState("");
   const navigate = useNavigate();
 
-  const { userProfile, loading } = useAuth();
+  const { userProfile, loading, clearAuthState } = useAuth();
 
   // Stabilkan userProfile dengan useMemo untuk mencegah re-render
   const stableUserProfile = useMemo(() => userProfile, [userProfile]);
@@ -70,10 +70,14 @@ export default function AdminHeader({ activeUnit }) {
   const confirmLogout = async () => {
     setShowLogoutPopup(false);
     
-    const { error } = await supabase.auth.signOut();
-    if (error) {
+    try {
+      await logout();
+    } catch (error) {
       console.error("Error logging out:", error.message);
     }
+    
+    // Clear auth state
+    clearAuthState();
     
     navigate("/admin/login");
   };

@@ -5,12 +5,21 @@ import { Eye, EyeOff, ArrowLeft, Timer, AlertTriangle, UserPlus, X, Search } fro
 import { useNavigate } from "react-router-dom";
 import logoHermina from "../../assets/logo-hermina-baru.svg";
 import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../supabaseClient";
 import { getDashboardRoute } from "../../utils/navigationHelper";
+import { 
+  createAdminAccount, 
+  getSettings, 
+  updateSettings, 
+  getDokterGP, 
+  getDokterDPJP, 
+  getPerawat,
+  logout,
+  changePassword 
+} from "../../config/api";
 
 export default function SettingsAkunAdmin() {
   const navigate = useNavigate();
-  const { userProfile, session } = useAuth();
+  const { userProfile, clearAuthState } = useAuth();
   
   // Function to get correct dashboard route based on user role - using helper
   const getBackToDashboard = () => getDashboardRoute(userProfile);
@@ -57,30 +66,16 @@ export default function SettingsAkunAdmin() {
       }
       
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        
-        const response = await fetch(`${API_URL}/api/v2/admin/create-account`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: formAkun.email,
-            nama_lengkap: formAkun.nama_lengkap,
-            id_pegawai: formAkun.id_pegawai,
-            jabatan: formAkun.jabatan,
-            password: formAkun.password,
-            role: formAkun.role,
-            unit: formAkun.unit || null
-          })
+        // Call backend to create account using API service
+        await createAdminAccount({
+          email: formAkun.email,
+          nama_lengkap: formAkun.nama_lengkap,
+          id_pegawai: formAkun.id_pegawai,
+          jabatan: formAkun.jabatan,
+          password: formAkun.password,
+          role: formAkun.role,
+          unit: formAkun.unit || null
         });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-          setAkunError(data.error || "Gagal membuat akun baru!");
-          return;
-        }
         
         setAkunSuccess("Akun berhasil dibuat!");
         setFormAkun({ email: "", nama_lengkap: "", id_pegawai: "", jabatan: "", password: "", role: "", unit: "" });
@@ -166,10 +161,7 @@ export default function SettingsAkunAdmin() {
     // Fetch settings dari database
     const fetchSettings = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${API_URL}/api/v2/settings`);
-        if (response.ok) {
-          const data = await response.json();
+        const data = await getSettings();
           
           // Set ESI settings per unit
           if (data.esi_kamala) {
@@ -213,9 +205,6 @@ export default function SettingsAkunAdmin() {
             setPerawatJaga(data.petugas_jaga.perawatJaga || []);
             setDokterIgdJaga(data.petugas_jaga.dokterIgdJaga || []);
           }
-        } else {
-          console.error('Failed to fetch settings');
-        }
       } catch (error) {
         console.error('Error fetching settings:', error);
       }
@@ -234,27 +223,17 @@ export default function SettingsAkunAdmin() {
   // Fetch data petugas dari database
   const fetchPetugasData = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       // Fetch Dokter GP
-      const gpResponse = await fetch(`${API_URL}/api/v2/dokter-gp`);
-      if (gpResponse.ok) {
-        const gpData = await gpResponse.json();
-        setDokterGpList(gpData);
-      }
+      const gpData = await getDokterGP();
+      setDokterGpList(gpData);
 
       // Fetch Dokter DPJP
-      const dpjpResponse = await fetch(`${API_URL}/api/v2/dokter-dpjp`);
-      if (dpjpResponse.ok) {
-        const dpjpData = await dpjpResponse.json();
-        setDokterDpjpList(dpjpData);
-      }
+      const dpjpData = await getDokterDPJP();
+      setDokterDpjpList(dpjpData);
 
       // Fetch Perawat
-      const perawatResponse = await fetch(`${API_URL}/api/v2/perawat`);
-      if (perawatResponse.ok) {
-        const perawatData = await perawatResponse.json();
-        setPerawatList(perawatData);
-      }
+      const perawatData = await getPerawat();
+      setPerawatList(perawatData);
     } catch (error) {
       console.error('Error fetching petugas data:', error);
     }
@@ -280,10 +259,13 @@ export default function SettingsAkunAdmin() {
   const handleConfirmLogout = async () => {
     setShowLogoutPopup(false);
     
-    const { error } = await supabase.auth.signOut();
-    if (error) {
+    try {
+      await logout();
+    } catch (error) {
       console.error("Error logging out:", error.message);
     }
+    
+    clearAuthState();
     
     setTimeout(() => {
       navigate("/admin/login");
@@ -314,12 +296,8 @@ export default function SettingsAkunAdmin() {
     }
 
     try {
-      // Update password menggunakan Supabase Auth
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-
-      if (error) throw error;
+      // Update password using API service
+      await changePassword(currentPassword, newPassword);
 
       setSuccessMessage("Password berhasil diperbarui!");
       
@@ -363,23 +341,11 @@ export default function SettingsAkunAdmin() {
 
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(esiSettings)
-      });
-
-      if (response.ok) {
+      await updateSettings(esiSettings);
         setSuccessMessage("Pengaturan ESI berhasil disimpan ke server!");
         setTimeout(() => {
           setSuccessMessage("");
         }, 1500);
-      } else {
-        throw new Error('Failed to save settings');
-      }
     } catch (error) {
       console.error('Error saving ESI settings:', error);
       setErrorMessage("Gagal menyimpan pengaturan ESI!");
@@ -407,28 +373,15 @@ export default function SettingsAkunAdmin() {
   const handleSaveBatasWaktu = async (e) => {
     e.preventDefault();
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       const body = activeUnit === "kamala"
         ? { batas_waktu_kamala: batasWaktuKamala }
         : { batas_waktu_padma: batasWaktuPadma };
-      const response = await fetch(`${API_URL}/api/v2/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body)
-      });
+      await updateSettings(body);
 
-      if (response.ok) {
         setSuccessMessage("Pengaturan batas waktu per tahap berhasil disimpan ke server!");
         setTimeout(() => {
           setSuccessMessage("");
         }, 1500);
-      } else {
-        const errorData = await response.json();
-        console.error('Server error:', errorData);
-        throw new Error(errorData.error || 'Failed to save settings');
-      }
     } catch (error) {
       console.error('Error saving batas waktu:', error);
       setErrorMessage("Gagal menyimpan pengaturan batas waktu!");
@@ -487,25 +440,14 @@ export default function SettingsAkunAdmin() {
 
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await updateSettings({
           petugas_jaga: petugasJagaSettings
-        })
-      });
+        });
 
-      if (response.ok) {
         setSuccessMessage("Pengaturan Petugas Jaga berhasil disimpan ke server!");
         setTimeout(() => {
           setSuccessMessage("");
         }, 1500);
-      } else {
-        throw new Error('Failed to save petugas jaga');
-      }
     } catch (error) {
       console.error('Error saving petugas jaga:', error);
       setErrorMessage("Gagal menyimpan pengaturan Petugas Jaga!");

@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import PrintableTicket from "./PrintableTicket";
+import { getRuangan, updateKunjungan, deleteKunjungan } from "../../config/api";
 
 // --- (Helper-helper Timer & Format tidak berubah) ---
 function formatDuration(milliseconds) {
@@ -231,7 +232,7 @@ export default function DetailPasienSlideIn({
   dokterDpjpData = []
 }) {
   
-  const {session } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [localPatient, setLocalPatient] = useState(patient || null);
   const [openAccordion, setOpenAccordion] = useState([1]);
   
@@ -307,12 +308,7 @@ export default function DetailPasienSlideIn({
       setFilteredDpjp(dokterDpjpData);
 
       // Fetch data ruangan dari API
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      fetch(`${API_URL}/api/v2/ruangan`)
-        .then(res => {
-
-          return res.json();
-        })
+      getRuangan()
         .then(data => {
 
           setRuanganList(data);
@@ -556,28 +552,14 @@ setIsDpjpDropdownOpen(true);
       dataToSave.current_step = currentStepDone;
     }
 
-    if (!session || !session.access_token) {
+    if (!isAuthenticated) {
       alert("Sesi Anda berakhir. Harap login ulang.");
-      console.error("Gagal menyimpan: Sesi tidak ditemukan.");
+      console.error("Gagal menyimpan: User tidak authenticated.");
       return false;
     }
       try {
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(
-          `${API_URL}/api/v2/kunjungan/${localPatient.id}`,
-          {
-            method: "PATCH",
-            headers: { 
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify(dataToSave),
-          }
-        );
+        const updatedKunjungan = await updateKunjungan(localPatient.id, dataToSave);
 
-      if (!response.ok) throw new Error("Gagal menyimpan data ke server");
-
-      const updatedKunjungan = await response.json();
       onDataUpdated(updatedKunjungan);
       return true;
 
@@ -766,29 +748,15 @@ setIsDpjpDropdownOpen(true);
       step_timestamps: newTimestamps,
     };
 
-    if (!session || !session.access_token) {
+    if (!isAuthenticated) {
       alert("Sesi Anda berakhir. Harap login ulang.");
-      console.error("Gagal menyimpan: Sesi tidak ditemukan.");
+      console.error("Gagal menyimpan: User tidak authenticated.");
       return;
     }
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(
-        `${API_URL}/api/v2/kunjungan/${localPatient.id}`,
-        {
-          method: "PATCH",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify(dataToSave),
-        }
-      );
+      const updatedKunjungan = await updateKunjungan(localPatient.id, dataToSave);
 
-      if (!response.ok) throw new Error("Gagal menghapus pasien");
-
-      const updatedKunjungan = await response.json();
       onDataUpdated(updatedKunjungan);
       setIsHapusModalOpen(false);
       setIsConfirmHapusModalOpen(false);

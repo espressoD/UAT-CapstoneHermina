@@ -286,6 +286,8 @@ app.get('/api/v2/kunjungan', async (req, res) => {
       step_timestamps: normalizeStepTimestamps(item.step_timestamps),
       nama: item.pasien?.nama || 'Tanpa Nama',
       medrec: item.pasien?.medrec || '-',
+      jenis_kelamin: item.pasien?.jenis_kelamin,
+      umur: item.pasien?.umur,
       nama_wali: item.pasien?.nama_wali,
       hubungan_wali: item.pasien?.hubungan_wali,
       telepon_wali: item.pasien?.telepon_wali,
