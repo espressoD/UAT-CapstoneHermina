@@ -75,7 +75,6 @@ export function AuthProvider({ children }) {
     let isMounted = true;
     let safetyTimer;
     let authSubscription;
-    let isAuthListenerReady = false; // Flag untuk mencegah race condition
 
     const initializeAuth = async () => {
       // Skip jika sudah diinisialisasi
@@ -95,60 +94,47 @@ export function AuthProvider({ children }) {
 
         if (isMounted) {
           setSession(initialSession);
-          if (initialSession) {
-            // Cek apakah profile sudah ada di localStorage
-            let cachedProfile = null;
-            try {
-              const cached = localStorage.getItem('userProfile');
-              cachedProfile = cached ? JSON.parse(cached) : null;
-            } catch {
-              cachedProfile = null;
-            }
-            
-            if (cachedProfile && cachedProfile.id === initialSession.user.id) {
-              // Gunakan cached profile, skip fetch
-              devLog("3. Menggunakan cached profile:", cachedProfile);
-              setUserProfile(cachedProfile);
-              setLoading(false);
-              setIsInitialized(true); // Tandai sudah diinisialisasi
-              isInitializedRef.current = true; // Update ref
-              isAuthListenerReady = true; // Tandai listener siap
-              clearTimeout(safetyTimer);
-            } else {
-              // Fetch profile baru
-              const profile = await fetchProfile(initialSession.user.id);
-              devLog("Profile hasil fetch:", profile);
-              if (isMounted && profile) {
-                setUserProfile(profile);
-                // Simpan ke localStorage untuk persistence
-                localStorage.setItem('userProfile', JSON.stringify(profile));
-                setIsInitialized(true); // Tandai sudah diinisialisasi
-                isInitializedRef.current = true; // Update ref
-                isAuthListenerReady = true; // Tandai listener siap
-                // Clear safety timer setelah berhasil
-                clearTimeout(safetyTimer);
-              }
-              devLog("5. Selesai Loading.");
-              setLoading(false);
-            }
-          } else {
-            // Jika tidak ada session, hapus profile dari localStorage
-            localStorage.removeItem('userProfile');
-            setUserProfile(null);
-            setIsInitialized(true); // Tandai sudah diinisialisasi
-            isInitializedRef.current = true; // Update ref
-            isAuthListenerReady = true; // Tandai listener siap
-            devLog("5. Selesai Loading.");
-            setLoading(false);
+          
+          // Cek apakah profile sudah ada di localStorage
+          let cachedProfile = null;
+          try {
+            const cached = localStorage.getItem('userProfile');
+            cachedProfile = cached ? JSON.parse(cached) : null;
+          } catch {
+            cachedProfile = null;
           }
+          
+          if (initialSession && cachedProfile && cachedProfile.id === initialSession.user.id) {
+            // Gunakan cached profile (dari backend login)
+            devLog("3. Menggunakan cached profile:", cachedProfile);
+            setUserProfile(cachedProfile);
+          } else if (!initialSession) {
+            // Tidak ada session, clear profile
+            devLog("3. No session, clearing profile");
+            setUserProfile(null);
+            localStorage.removeItem('userProfile');
+          } else if (initialSession && !cachedProfile) {
+            // Ada session tapi tidak ada cached profile - ini hanya terjadi di page refresh
+            // Fetch profile dari database sebagai fallback
+            devLog("3. Session exists but no cache, fetching profile...");
+            const profile = await fetchProfile(initialSession.user.id);
+            if (isMounted && profile) {
+              setUserProfile(profile);
+              localStorage.setItem('userProfile', JSON.stringify(profile));
+            }
+          }
+          
+          setLoading(false);
+          setIsInitialized(true);
+          isInitializedRef.current = true;
+          clearTimeout(safetyTimer);
         }
       } catch (error) {
         devError("Auth initialization error:", error);
         if (isMounted) {
           setLoading(false);
-          setIsInitialized(true); // Tandai sudah diinisialisasi meski error
-          isInitializedRef.current = true; // Update ref
-          isAuthListenerReady = true;
+          setIsInitialized(true);
+          isInitializedRef.current = true;
         }
       }
     };
@@ -156,55 +142,43 @@ export function AuthProvider({ children }) {
     initializeAuth();
 
     // --- PENGAMAN ANTI-STUCK ---
-    // Jika dalam 8 detik masih loading, paksa berhenti loading
-    // HANYA jika belum diinisialisasi (cek menggunakan ref)
     safetyTimer = setTimeout(() => {
       if (isMounted && !isInitializedRef.current) {
         devWarn("⚠️ Auth terlalu lama, memaksa selesai loading.");
         setLoading(false);
         setIsInitialized(true);
         isInitializedRef.current = true;
-      } else if (isInitializedRef.current) {
-        devLog("✅ Auth sudah initialized, safety timer dibatalkan");
       }
-    }, 8000);
+    }, 5000); // Kurangi dari 8s ke 5s
 
-    // Auth state listener
+    // Auth state listener - SIMPLIFIED
     const setupAuthListener = async () => {
       const { data } = await supabase.auth.onAuthStateChange(
         async (event, currentSession) => {
           devLog("Auth event:", event);
           
-          // PENTING: Skip semua event jika listener belum siap (masih initialization)
-          if (!isAuthListenerReady) {
-            devLog("Listener belum siap, skip event:", event);
-            return;
-          }
+          if (!isMounted) return;
           
-          if (isMounted) {
-            // Hanya fetch profile untuk SIGNED_IN (login baru)
-            // Skip untuk TOKEN_REFRESHED agar tidak double fetch saat tab refocus
-            if (currentSession && event === 'SIGNED_IN') {
-               devLog("Fetching profile dari auth listener (SIGNED_IN)...");
-               setSession(currentSession); // Update session hanya saat SIGNED_IN
-               const profile = await fetchProfile(currentSession.user.id);
-               if (isMounted && profile) {
-                 setUserProfile(profile);
-                 // Simpan ke localStorage
-                 localStorage.setItem('userProfile', JSON.stringify(profile));
-                 setLoading(false); // Set loading false setelah profile didapat
-               }
-            } else if (event === 'TOKEN_REFRESHED') {
-              // Token di-refresh (tab refocus), tapi SKIP semua state updates
-              devLog("Token refreshed - NO state updates to prevent re-render");
-              // JANGAN set session atau state apapun
-              // Session tetap valid, gunakan cached profile dari localStorage
-            } else if (event === 'SIGNED_OUT') {
-               setSession(null);
-               setUserProfile(null);
-               localStorage.removeItem('userProfile');
-               setIsInitialized(false); // Reset flag saat logout
+          if (event === 'SIGNED_IN') {
+            // SIGNED_IN dari login - baca profile dari localStorage
+            setSession(currentSession);
+            const cached = localStorage.getItem('userProfile');
+            if (cached) {
+              const profile = JSON.parse(cached);
+              setUserProfile(profile);
+              devLog("Profile loaded from localStorage on SIGNED_IN:", profile);
             }
+          } else if (event === 'TOKEN_REFRESHED') {
+            // Token di-refresh, update session saja
+            setSession(currentSession);
+            devLog("Session updated from TOKEN_REFRESHED");
+          } else if (event === 'SIGNED_OUT') {
+            // Clear semua state saat logout
+            setSession(null);
+            setUserProfile(null);
+            localStorage.removeItem('userProfile');
+            setIsInitialized(false);
+            devLog("User signed out, cleared state");
           }
         }
       );
@@ -213,28 +187,9 @@ export function AuthProvider({ children }) {
 
     setupAuthListener();
 
-    // Handle visibility change (tab switching) - JANGAN re-initialize
-    let visibilityTimeout;
-    const handleVisibilityChange = () => {
-      // Clear timeout sebelumnya untuk debounce
-      clearTimeout(visibilityTimeout);
-      
-      if (document.visibilityState === 'visible' && isInitialized) {
-        // Debounce 500ms untuk mencegah multiple trigger
-        visibilityTimeout = setTimeout(() => {
-          devLog("Tab kembali visible, tapi auth sudah initialized - skip refresh");
-          // Tidak melakukan apa-apa, biarkan cached state tetap digunakan
-        }, 500);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       isMounted = false;
       clearTimeout(safetyTimer);
-      clearTimeout(visibilityTimeout);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (authSubscription) {
         authSubscription.unsubscribe();
       }

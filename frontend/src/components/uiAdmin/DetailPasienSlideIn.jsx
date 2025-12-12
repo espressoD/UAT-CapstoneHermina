@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import PrintableTicket from "./PrintableTicket";
 
 // --- (Helper-helper Timer & Format tidak berubah) ---
 function formatDuration(milliseconds) {
@@ -909,7 +910,7 @@ setIsDpjpDropdownOpen(true);
               <AccordionItem
                 title={
                   <div className="flex justify-between items-center w-full pr-2">
-                    <span className="font-medium text-gray-800">Tahap 1: Pendaftaran & Pemeriksaan Awal</span>
+                    <span className="font-medium text-gray-800">Tahap 1: Pemeriksaan Triase</span>
                     <StepTimer
                       status={stepData[1]?.status}
                       startTime={stepData[1]?.startTime}
@@ -1424,10 +1425,16 @@ setIsDpjpDropdownOpen(true);
               )}
             </div> {/* Akhir Scrollable Content */}
 
+            {/* Footer: Tombol Print Tiket */}
+            {localPatient.status_kunjungan === "Aktif" && (
+              <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+                <PrintableTicket kunjungan={localPatient} />
+              </div>
+            )}
 
             {/* === Render Modal (Tidak berubah) === */}
             <AnimatePresence>
-              <ConfirmationModal isOpen={isTahap1ModalOpen} onClose={handleModal1Cancel} onConfirm={handleModal1Confirm} title="Konfirmasi Pendaftaran & Pemeriksaan Awal" />
+              <ConfirmationModal isOpen={isTahap1ModalOpen} onClose={handleModal1Cancel} onConfirm={handleModal1Confirm} title="Konfirmasi Pemeriksaan Triase" />
               <ConfirmationModal isOpen={isTahap2ModalOpen} onClose={handleModal2Cancel} onConfirm={handleModal2Confirm} title="Konfirmasi Pemeriksaan Dokter IGD" />
               <ConfirmationModal isOpen={isTahap3ModalOpen} onClose={handleModal3Cancel} onConfirm={handleModal3Confirm} title="Konfirmasi Pemeriksaan Penunjang" />
               <ConfirmationModal isOpen={isTahap4ModalOpen} onClose={handleModal4Cancel} onConfirm={handleModal4Confirm} title="Konfirmasi Tindakan & Pengobatan" />

@@ -188,10 +188,10 @@ export default function DaftarKunjunganLama() {
           className="max-w-6xl mx-auto bg-white rounded-lg shadow p-8"
         >
           <button
-            onClick={() => navigate("/admin/cari-pasien")}
+            onClick={() => navigate(getDashboardRoute(userProfile))}
             className="flex items-center gap-2 text-sm text-green-700 hover:underline mb-4"
           >
-            <ArrowLeft size={16} /> Kembali ke Pencarian
+            <ArrowLeft size={16} /> Kembali ke Dashboard
           </button>
 
           <h2 className="text-2xl font-bold text-gray-900 mb-6">

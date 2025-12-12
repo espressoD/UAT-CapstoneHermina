@@ -1,20 +1,27 @@
 // src/pages/InputPasienBaru.jsx
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
   UserRoundPlus,
   CheckCircle2, // (MODIFIKASI) Mengganti CheckCircle dengan CheckCircle2
   AlertTriangle,
+  Printer,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import logoHermina from "../../assets/logo-hermina-baru.svg";
 import { useAuth } from "../../context/AuthContext";
 import { getDashboardRoute } from "../../utils/navigationHelper";
+import PrintableTicket from "../../components/uiAdmin/PrintableTicket";
 
 export default function InputPasienBaru() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { session, userProfile } = useAuth();
+  
+  // Ambil bed number dari navigation state (jika ada)
+  const bedNumber = location.state?.bedNumber || null;
+  const unit = location.state?.unit || null;
 
   const [formData, setFormData] = useState({
     nama: "",
@@ -24,12 +31,15 @@ export default function InputPasienBaru() {
     hubunganWali: "",
     teleponWali: "",
     jenisPasien: "",
-    penjamin: "Umum",
+    penjamin: unit?.toLowerCase() === 'kamala' ? 'JKN' : 'Umum', // Set default based on unit
     nomorAsuransi: "",
+    bedNumber: bedNumber, // Tambahkan bed number ke form data
   });
 
   const [popupType, setPopupType] = useState(null); // "error", "confirm", "success"
   const [isSubmitting, setIsSubmitting] = useState(false); // Prevent double submission
+  const [savedKunjungan, setSavedKunjungan] = useState(null); // Data kunjungan yang baru dibuat
+  const printTicketRef = useRef(null); // Ref untuk trigger print
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -39,8 +49,21 @@ export default function InputPasienBaru() {
   const handleSubmit = (e) => {
     e.preventDefault();
 
+    // Validasi nama pasien (wajib)
     if (!formData.nama.trim()) {
-      setPopupType("error");
+      alert('Nama pasien wajib diisi!');
+      return;
+    }
+
+    // Validasi penjamin (wajib)
+    if (!formData.penjamin) {
+      alert('Penjamin wajib dipilih!');
+      return;
+    }
+
+    // Validasi nomor asuransi jika penjamin JKN atau Asuransi Lainnya
+    if ((formData.penjamin === 'JKN' || formData.penjamin === 'Asuransi Lainnya') && !formData.nomorAsuransi.trim()) {
+      alert(`Nomor ${formData.penjamin === 'JKN' ? 'JKN' : 'Asuransi'} wajib diisi!`);
       return;
     }
 
@@ -60,42 +83,59 @@ const handleConfirmSave = async () => {
 
   setIsSubmitting(true);
   
-    try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/v2/kunjungan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify(formData),
-      });
+  try {
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const response = await fetch(`${API_URL}/api/v2/kunjungan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(formData),
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Error dari server:', errorData);
-        setPopupType(null);
-        alert(`Gagal menyimpan: ${errorData.error || 'Terjadi kesalahan pada server'}`);
-        return;
-      }
-
-      const dataYangDisimpan = await response.json();
-
-
-      setPopupType("success");
-
-    } catch (error) {
-      console.error("Terjadi error saat menyimpan:", error);
-      setPopupType(null); 
-      alert(`Terjadi kesalahan jaringan: ${error.message}`);
-    } finally {
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Error dari server:', errorData);
+      setPopupType(null);
       setIsSubmitting(false);
+      alert(`Gagal menyimpan: ${errorData.error || 'Terjadi kesalahan pada server'}`);
+      return;
     }
-  };
+
+    const dataYangDisimpan = await response.json();
+    console.log('Data kunjungan berhasil disimpan:', dataYangDisimpan);
+
+    // Simpan data kunjungan untuk print tiket
+    // Backend mengembalikan { pasien: {...}, kunjungan: {...} }
+    setSavedKunjungan(dataYangDisimpan.kunjungan || dataYangDisimpan);
+
+    setPopupType("success");
+    setIsSubmitting(false);
+
+  } catch (error) {
+    console.error("Terjadi error saat menyimpan:", error);
+    setPopupType(null); 
+    setIsSubmitting(false);
+    alert(`Terjadi kesalahan jaringan: ${error.message}`);
+  }
+};
 
   const handleClosePopup = () => setPopupType(null);
 
   const handleCloseSuccess = () => navigate(getDashboardRoute(userProfile));
+
+  // Handler untuk print tiket antrian
+  const handlePrintTicket = () => {
+    if (printTicketRef.current) {
+      try {
+        printTicketRef.current.click();
+      } catch (error) {
+        console.error('Error saat print tiket:', error);
+        alert('Gagal print tiket. Silakan coba lagi dari detail pasien.');
+      }
+    }
+  };
 
   // Variants animasi popup
   const backdrop = {
@@ -145,15 +185,27 @@ const handleConfirmSave = async () => {
       <main className="flex-1 p-8">
         <div className="max-w-5xl mx-auto bg-white rounded-lg shadow p-8">
           <button
-            onClick={() => navigate("/admin/cari-pasien")}
+            onClick={() => navigate(getDashboardRoute(userProfile))}
             className="flex items-center gap-2 text-sm text-green-700 hover:underline mb-6"
           >
-            <ArrowLeft size={16} /> Kembali ke Pencarian
+            <ArrowLeft size={16} /> Kembali ke Dashboard
           </button>
 
           <h2 className="text-2xl font-bold text-gray-900 mb-6">
             Input Data Pasien Baru
           </h2>
+
+          {/* Display selected bed if available */}
+          {bedNumber && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 text-green-800">
+                <CheckCircle2 size={20} />
+                <span className="font-semibold">
+                  Bed dipilih: {bedNumber} ({unit})
+                </span>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* INFORMASI KUNJUNGAN (Tidak ada perubahan) */}
@@ -243,7 +295,7 @@ const handleConfirmSave = async () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Nama Wali <span className="text-red-500">*</span>
+                    Nama Wali
                   </label>
                   <input
                     type="text"
@@ -257,7 +309,7 @@ const handleConfirmSave = async () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Hubungan dengan Pasien <span className="text-red-500">*</span>
+                    Hubungan dengan Pasien
                   </label>
                   <select
                     name="hubunganWali"
@@ -276,7 +328,7 @@ const handleConfirmSave = async () => {
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    No. Telepon Wali <span className="text-red-500">*</span>
+                    No. Telepon Wali
                   </label>
                   <input
                     type="text"
@@ -290,15 +342,29 @@ const handleConfirmSave = async () => {
               </div>
             </section>
 
-            {/* PENJAMIN / PEMBAYARAN (Tidak ada perubahan) */}
+            {/* PENJAMIN / PEMBAYARAN */}
             <section>
               <h3 className="text-lg font-semibold text-gray-900 border-b border-green-700 pb-2 mb-4">
-                Penjamin / Pembayaran
+                Penjamin / Pembayaran <span className="text-red-500">*</span>
               </h3>
 
               <div className="flex flex-wrap gap-6 mb-4">
-                {["Umum", "JKN", "Asuransi Lainnya"].map(
-                  (item) => (
+                {/* Filter options based on unit */}
+                {unit?.toLowerCase() === 'kamala' ? (
+                  // Kamala: hanya JKN
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="penjamin"
+                      value="JKN"
+                      checked={formData.penjamin === "JKN"}
+                      onChange={handleChange}
+                    />
+                    JKN
+                  </label>
+                ) : (
+                  // Padma: hanya Umum dan Asuransi Lainnya
+                  ["Umum", "Asuransi Lainnya"].map((item) => (
                     <label key={item} className="flex items-center gap-2">
                       <input
                         type="radio"
@@ -309,7 +375,7 @@ const handleConfirmSave = async () => {
                       />
                       {item}
                     </label>
-                  )
+                  ))
                 )}
               </div>
 
@@ -360,7 +426,7 @@ const handleConfirmSave = async () => {
               animate="visible"
               exit="exit"
             >
-              {/* CONFIRM MODAL (Tidak ada perubahan dari sebelumnya) */}
+              {/* CONFIRM MODAL */}
               {popupType === "confirm" && (
                 <>
                   <AlertTriangle className="w-14 h-14 text-yellow-500 mx-auto mb-3" /> 
@@ -401,18 +467,44 @@ const handleConfirmSave = async () => {
                   <p className="text-gray-600 mb-4">
                     Data pasien baru berhasil disimpan dan didaftarkan.
                   </p>
-                  <button
-                    onClick={handleCloseSuccess}
-                    className="bg-green-700 hover:bg-green-800 text-white px-6 py-2 rounded-md"
-                  >
-                    Oke
-                  </button>
+                  {savedKunjungan && savedKunjungan.nomor_antrian && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                      <p className="text-sm text-gray-700 font-medium">
+                        Nomor Antrian: <span className="text-green-700 font-bold text-lg">{savedKunjungan.nomor_antrian}</span>
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={handlePrintTicket}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md flex items-center gap-2 transition-colors"
+                    >
+                      <Printer size={18} />
+                      Print Tiket
+                    </button>
+                    <button
+                      onClick={handleCloseSuccess}
+                      className="bg-green-700 hover:bg-green-800 text-white px-6 py-2 rounded-md transition-colors"
+                    >
+                      Oke
+                    </button>
+                  </div>
                 </>
               )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Hidden PrintableTicket component untuk print functionality */}
+      {savedKunjungan && savedKunjungan.nomor_antrian && (
+        <div className="hidden">
+          <PrintableTicket 
+            kunjungan={savedKunjungan} 
+            ref={printTicketRef}
+          />
+        </div>
+      )}
     </div>
   );
 }

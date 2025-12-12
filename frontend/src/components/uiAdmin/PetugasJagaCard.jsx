@@ -1,5 +1,6 @@
 // src/components/uiAdmin/PetugasJagaCard.jsx
 import { useState, useEffect } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 // Komponen bar (padding p-2.5)
 const PetugasList = ({ title, list, bgColor, textColor, borderColor }) => {
@@ -38,11 +39,13 @@ const PetugasList = ({ title, list, bgColor, textColor, borderColor }) => {
 
 // Terima 'className' sebagai prop (masih penting untuk h-full)
 export default function PetugasJagaCard({ 
-  className = ''
+  className = '',
+  hideToggle = false
 }) {
   const [penanggungJawab, setPenanggungJawab] = useState([]);
   const [perawat, setPerawat] = useState([]);
   const [dokterIgd, setDokterIgd] = useState([]);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     // Load data dari database via API
@@ -84,11 +87,23 @@ export default function PetugasJagaCard({
   return (
     <div className={`bg-white p-3 rounded-lg shadow-sm flex flex-col ${className}`}>
       
-      <h3 className="text-lg font-semibold text-gray-800 mb-2">
-        Petugas Jaga
-      </h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold text-gray-800">
+          Petugas Jaga
+        </h3>
+        {!hideToggle && (
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            aria-label={isCollapsed ? "Buka" : "Tutup"}
+          >
+            {isCollapsed ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
+          </button>
+        )}
+      </div>
       
-      <div className="space-y-3">
+      {(hideToggle || !isCollapsed) && (
+        <div className="space-y-3">
         <PetugasList 
           title="Penanggung Jawab" 
           list={penanggungJawab}
@@ -110,7 +125,8 @@ export default function PetugasJagaCard({
           textColor="text-orange-800"
           borderColor="border-orange-200"
         />
-      </div>
+        </div>
+      )}
     </div>
   );
 }

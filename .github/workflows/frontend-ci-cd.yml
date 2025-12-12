@@ -94,7 +94,7 @@ jobs:
             docker run -d \
               --name frontend \
               --restart unless-stopped \
-              -p 3000:80 \
+              -p 4000:80 \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             
             # Clean up old images

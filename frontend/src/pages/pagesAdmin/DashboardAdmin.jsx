@@ -2,12 +2,11 @@
 import { useState, useEffect, useMemo, useRef } from "react"; // 🚀 Tambah useRef
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Users, Baby, Activity, User, Plus } from "lucide-react";
+import { User, Plus } from "lucide-react";
 
 import { supabase } from "../../supabaseClient";
 import AdminHeader from "../../components/uiAdmin/AdminHeader";
-import StatCard from "../../components/uiAdmin/StatCard";
-import PetugasJagaCard from "../../components/uiAdmin/PetugasJagaCard";
+import InfoSection from "../../components/uiAdmin/InfoSection";
 import AlurProses from "../../components/uiAdmin/AlurProses";
 import PasienTable from "../../components/uiAdmin/PasienTable";
 import DetailPasienSlideIn from "../../components/uiAdmin/DetailPasienSlideIn";
@@ -109,16 +108,17 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
       };
 
       try {
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
         const [
           kunjunganRes,
           perawatRes,
           gpRes,
           dpjpRes
         ] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/v2/kunjungan`, { headers: authHeader }),
-          fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/v2/perawat`, { headers: authHeader }),
-          fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/v2/dokter-gp`, { headers: authHeader }),
-          fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/v2/dokter-dpjp`, { headers: authHeader })
+          fetch(`${API_URL}/api/v2/kunjungan?status=Aktif`, { headers: authHeader }),
+          fetch(`${API_URL}/api/v2/perawat`, { headers: authHeader }),
+          fetch(`${API_URL}/api/v2/dokter-gp`, { headers: authHeader }),
+          fetch(`${API_URL}/api/v2/dokter-dpjp`, { headers: authHeader })
         ]);
 
         // Cek semua response
@@ -127,11 +127,13 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         if (!gpRes.ok) throw new Error("Gagal mengambil data dokter GP");
         if (!dpjpRes.ok) throw new Error("Gagal mengambil data dokter DPJP");
 
-        const kunjunganData = await kunjunganRes.json();
+        const kunjunganResult = await kunjunganRes.json();
         const perawatData = await perawatRes.json();
         const gpData = await gpRes.json();
         const dpjpData = await dpjpRes.json();
 
+        // Handle new response structure from backend
+        const kunjunganData = kunjunganResult.data || kunjunganResult;
         setAllKunjungan(kunjunganData);
         setPerawatList(perawatData);
         setDokterGpList(gpData);
@@ -161,6 +163,8 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
   useEffect(() => {
     if (!session?.access_token) return;
 
+    let refetchTimeout;
+
     const channel = supabase
       .channel('db-kunjungan-changes')
       .on(
@@ -172,29 +176,34 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
         },
         (payload) => {
           devLog('Perubahan terdeteksi di tabel kunjungan!', payload);
-          // Re-fetch data saat ada perubahan
-          const refetchData = async () => {
+          
+          // Clear previous timeout untuk debounce multiple changes
+          clearTimeout(refetchTimeout);
+          
+          // Debounce refetch dengan delay minimal (200ms) untuk batch updates
+          refetchTimeout = setTimeout(async () => {
             if (!session?.access_token) return;
 
             try {
               const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-              const res = await fetch(`${API_URL}/api/v2/kunjungan`, {
+              const res = await fetch(`${API_URL}/api/v2/kunjungan?status=Aktif`, {
                 headers: { 'Authorization': `Bearer ${session.access_token}` }
               });
               if (res.ok) {
-                const data = await res.json();
+                const result = await res.json();
+                const data = result.data || result;
                 setAllKunjungan(data);
               }
             } catch (error) {
               devError("Error refetching kunjungan:", error);
             }
-          };
-          refetchData();
+          }, 200); // Kurangi delay ke 200ms untuk faster sync antar komputer
         }
       )
       .subscribe();
 
     return () => {
+      clearTimeout(refetchTimeout);
       supabase.removeChannel(channel);
     };
   }, [session]); // Setup subscription when session is ready
@@ -428,22 +437,14 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6"
+            className="mt-6"
           >
-            {/* Ganti 'count' dengan data dinamis dari 'statCounts' */}
-            <div className="grid grid-cols-1 gap-6 h-full">
-              <div className="w-full">
-                <StatCard title="Pasien Umum" count={statCounts["Umum"]} icon={<Users size={24} />} color="bg-orange-500" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <StatCard title="Pasien Anak" count={statCounts["Anak"]} icon={<Baby size={24} />} color="bg-cyan-500" />
-                <StatCard title="Pasien Kebidanan" count={statCounts["Kebidanan"]} icon={<Activity size={24} />} color="bg-green-500" />
-              </div>
-            </div>
-            <PetugasJagaCard
-              key={petugasJagaKey}
+            <InfoSection 
+              statCounts={statCounts}
+              petugasJagaKey={petugasJagaKey}
               perawatData={perawatList}
-              dokterGpData={dokterGpList} />
+              dokterGpData={dokterGpList}
+            />
           </motion.div>
         )}
 
@@ -487,31 +488,6 @@ export default function DashboardAdmin({ unit = "Padma", hideUnitTabs = false, s
             >
               Unit Kamala
             </button>
-            {/* Tombol Input Pasien Baru sejajar dengan unit selector */}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate("/admin/cari-pasien")}
-              className="ml-auto flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all"
-              style={{ minWidth: 170 }}
-            >
-              <Plus size={18} />
-              <span>Input Pasien Baru</span>
-            </motion.button>
-          </div>
-        )}
-
-        {/* Tombol Input Pasien Baru untuk perawat (ketika unit tabs hidden) */}
-        {shouldHideUnitTabs() && (
-          <div className="mt-8 flex justify-end border-b border-gray-300 pb-2">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate("/admin/cari-pasien")}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all"
-              style={{ minWidth: 170 }}
-            >
-              <Plus size={18} />
-              <span>Input Pasien Baru</span>
-            </motion.button>
           </div>
         )}
 

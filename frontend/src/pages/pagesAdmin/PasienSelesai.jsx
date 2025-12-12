@@ -1,6 +1,7 @@
 // src/pages/pagesAdmin/PasienSelesai.jsx
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 import { 
   X, 
   Timer, 
@@ -15,7 +16,9 @@ import {
   UserMinus,
   Search,
   Download,
-  ArrowRightCircle
+  ArrowRightCircle,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import Papa from 'papaparse'; 
 
@@ -172,7 +175,7 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
                 <div className="mt-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 flex items-center gap-2">
                   {/* Icon pasien opsional */}
                   <User className="text-gray-400" size={20} />
-                  <span className="text-lg font-bold text-gray-800">{kunjungan.pasien.nama}</span>
+                  <span className="text-lg font-bold text-gray-800">{kunjungan.nama}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -319,14 +322,124 @@ const RekapAlurPasienModal = ({ isOpen, onClose, pasien: kunjungan }) => {
 // --- Akhir Komponen Modal Rekap ---
 
 
-// 🚀 Terima 'data' dari Dashboard
-export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
+// 🚀 Self-fetching dengan backend pagination
+export default function PasienSelesai({ keputusanAkhirFilter = "" }) {
+  const { session } = useAuth();
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPasien, setSelectedPasien] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [startDateDisplay, setStartDateDisplay] = useState("");
   const [endDateDisplay, setEndDateDisplay] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
   
+  // Backend data states
+  const [pasienSelesaiData, setPasienSelesaiData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [paginationInfo, setPaginationInfo] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 50
+  });
+    // Fetch function untuk backend pagination
+  const fetchPasienSelesai = async (page = 1) => {
+    if (!session?.access_token) return;
+    
+    setLoading(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const url = new URL(`${API_URL}/api/v2/kunjungan`);
+      
+      // Pagination
+      url.searchParams.append('page', page);
+      url.searchParams.append('limit', itemsPerPage);
+      url.searchParams.append('status', 'Selesai');
+      
+      // Filter: Keputusan Akhir
+      if (keputusanAkhirFilter && keputusanAkhirFilter !== '') {
+        url.searchParams.append('keputusan_akhir', keputusanAkhirFilter);
+      }
+      
+      // Filter: Search
+      if (appliedSearch && appliedSearch.trim() !== '') {
+        url.searchParams.append('search', appliedSearch.trim());
+      }
+      
+      // Filter: Date Range (YYYY-MM-DD format)
+      if (startDateDisplay && endDateDisplay) {
+        const startDate = parseDisplayDate(startDateDisplay);
+        const endDate = parseDisplayDate(endDateDisplay);
+        
+        if (startDate && endDate) {
+          // Validasi max 7 hari
+          const diffDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+          if (diffDays > 7) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+              detail: { message: 'Rentang tanggal maksimal 7 hari!', type: 'error' }
+            }));
+            setLoading(false);
+            return;
+          }
+          
+          url.searchParams.append('startDate', startDate.toISOString().split('T')[0]);
+          url.searchParams.append('endDate', endDate.toISOString().split('T')[0]);
+        }
+      }
+      
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch');
+      }
+      
+      const result = await response.json();
+      setPasienSelesaiData(result.data || []);
+      setPaginationInfo(result.pagination || {
+        currentPage: page,
+        totalPages: 1,
+        totalItems: 0,
+        itemsPerPage: itemsPerPage
+      });
+      setCurrentPage(page);
+    } catch (error) {
+      console.error('Error fetching pasien selesai:', error);
+      window.dispatchEvent(new CustomEvent('show-toast', {
+        detail: { message: error.message, type: 'error' }
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // useEffect untuk fetch when filters change
+  useEffect(() => {
+    if (session?.access_token) {
+      fetchPasienSelesai(1); // Reset to page 1
+    }
+  }, [appliedSearch, startDateDisplay, endDateDisplay, keputusanAkhirFilter, session]);
+  
+  // Manual search handlers
+  const handleSearch = () => {
+    setAppliedSearch(searchQuery);
+  };
+  
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setAppliedSearch("");
+  };
+  
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
   // Handler untuk input tanggal dengan format DD/MM/YYYY
   const handleDateInput = (value, setter) => {
     // Hanya izinkan angka dan /
@@ -395,58 +508,30 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
     return finalTimestamp ? new Date(finalTimestamp) : null;
   };
 
-  // 🚀 Filter 'data' (prop) dengan search query, filter tanggal, dan filter keputusan akhir
-  const filteredPasien = useMemo(() => {
-    if (!data) return [];
-    
-    let filtered = data.filter(kunjungan => {
-      const namaPasien = kunjungan.pasien.nama.toLowerCase();
-      const ruangan = (kunjungan.disposisi_ruangan || "").toLowerCase();
-      const query = searchQuery.toLowerCase();
-      
-      // Cari di nama pasien atau ruangan
-      return namaPasien.includes(query) || ruangan.includes(query);
-    });
+  // Reset page ke 1 ketika search/filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, startDateDisplay, endDateDisplay, keputusanAkhirFilter]);
 
-    // Filter berdasarkan keputusan akhir dari prop
-    if (keputusanAkhirFilter && keputusanAkhirFilter !== "") {
-      filtered = filtered.filter(kunjungan => kunjungan.keputusan_akhir === keputusanAkhirFilter);
-    }
+  // Data sudah filtered di backend, langsung gunakan
+  const filteredPasien = pasienSelesaiData;
+  
+  // Old client-side filter (REMOVED - now handled by backend)
+  /* const filteredPasien = useMemo(() => {
+    if (!pasienSelesaiData) return [];
+  }, [pasienSelesaiData, searchQuery, startDateDisplay, endDateDisplay, keputusanAkhirFilter]); */
 
-    // Filter berdasarkan tanggal jika diisi
-    if (startDateDisplay && endDateDisplay) {
-      const start = parseDisplayDate(startDateDisplay);
-      const end = parseDisplayDate(endDateDisplay);
-      
-      if (!start || !end) {
-        // Tanggal tidak valid
-        return filtered;
-      }
-      
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      
-      // Validasi maksimal 7 hari
-      const diffTime = Math.abs(end - start);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays > 7) {
-        // Trigger toast warning
-        window.dispatchEvent(new CustomEvent('show-toast', {
-          detail: { message: 'Rentang tanggal maksimal 7 hari!', type: 'error' }
-        }));
-        return filtered; // Return tanpa filter tanggal
-      }
-      
-      filtered = filtered.filter(kunjungan => {
-        const waktuSelesai = getWaktuSelesaiRaw(kunjungan);
-        if (!waktuSelesai) return false;
-        return waktuSelesai >= start && waktuSelesai <= end;
-      });
+  // Pagination dari backend
+  const totalPages = paginationInfo.totalPages;
+  const totalItems = paginationInfo.totalItems;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchPasienSelesai(page); // Fetch dari backend
     }
-    
-    return filtered;
-  }, [data, searchQuery, startDateDisplay, endDateDisplay, keputusanAkhirFilter]);
+  };
 
   // 🚀 (BARU) Fungsi untuk mendapatkan Waktu Selesai yang REAL
   const getWaktuSelesai = (kunjungan) => {
@@ -493,6 +578,107 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
     return totalMs;
   };
 
+  // Export CSV dengan fetch all filtered data
+  const handleExportCSV = async () => {
+    if (!session?.access_token) return;
+    
+    setIsExporting(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const url = new URL(`${API_URL}/api/v2/kunjungan`);
+      
+      // Apply same filters but no pagination (limit=5000 for export)
+      url.searchParams.append('page', '1');
+      url.searchParams.append('limit', '5000');
+      url.searchParams.append('status', 'Selesai');
+      
+      if (keputusanAkhirFilter && keputusanAkhirFilter !== '') {
+        url.searchParams.append('keputusan_akhir', keputusanAkhirFilter);
+      }
+      
+      if (appliedSearch && appliedSearch.trim() !== '') {
+        url.searchParams.append('search', appliedSearch.trim());
+      }
+      
+      if (startDateDisplay && endDateDisplay) {
+        const startDate = parseDisplayDate(startDateDisplay);
+        const endDate = parseDisplayDate(endDateDisplay);
+        
+        if (startDate && endDate) {
+          url.searchParams.append('startDate', startDate.toISOString().split('T')[0]);
+          url.searchParams.append('endDate', endDate.toISOString().split('T')[0]);
+        }
+      }
+      
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch export data');
+      }
+      
+      const result = await response.json();
+      const exportData = result.data || [];
+      
+      if (exportData.length === 0) {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { message: 'Tidak ada data untuk diexport!', type: 'error' }
+        }));
+        return;
+      }
+      
+      // Generate CSV from all data
+      const csvData = exportData.map(kunjungan => ({
+        'Nomor Antrian': kunjungan.nomor_antrian || '-',
+        'Nama Pasien': kunjungan.nama || '-',
+        'Tanggal Masuk': formatTimestampCSV(kunjungan.created_at),
+        'Waktu Selesai': getWaktuSelesaiCSV(kunjungan),
+        'Total Durasi': formatDuration(getTotalDurasi(kunjungan)),
+        'Jenis Pasien': kunjungan.jenis_pasien || '-',
+        'Penjamin': kunjungan.penjamin || '-',
+        'ESI Level': kunjungan.triase?.esi || '-',
+        'Durasi Tahap 1': formatDuration(getDurasiTahap(kunjungan, 1)),
+        'Durasi Tahap 2': formatDuration(getDurasiTahap(kunjungan, 2)),
+        'Durasi Tahap 3': formatDuration(getDurasiTahap(kunjungan, 3)),
+        'Durasi Tahap 4': formatDuration(getDurasiTahap(kunjungan, 4)),
+        'Durasi Tahap 5': formatDuration(getDurasiTahap(kunjungan, 5)),
+        'Durasi Tahap 6': formatDuration(getDurasiTahap(kunjungan, 6)),
+        'Status Akhir': kunjungan.keputusan_akhir || '-',
+        'Disposisi Ruangan': kunjungan.disposisi_ruangan || '-',
+        'Alasan Hapus': kunjungan.alasan_hapus || '-',
+        'Alasan Rujuk': kunjungan.alasan_rujuk || '-'
+      }));
+
+      const csv = Papa.unparse(csvData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const urlBlob = URL.createObjectURL(blob);
+      const today = new Date().toISOString().split('T')[0];
+      
+      link.setAttribute('href', urlBlob);
+      link.setAttribute('download', `Rekap_Pasien_Selesai_${today}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      window.dispatchEvent(new CustomEvent('show-toast', {
+        detail: { 
+          message: `CSV berhasil diunduh! (${exportData.length} data)`, 
+          type: 'success' 
+        }
+      }));
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      window.dispatchEvent(new CustomEvent('show-toast', {
+        detail: { message: 'Gagal mengexport data!', type: 'error' }
+      }));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Helper untuk mendapatkan waktu selesai formatted untuk CSV (DD/MM/YYYY)
   const getWaktuSelesaiCSV = (kunjungan) => {
     const timestamps = kunjungan.step_timestamps || {};
@@ -515,54 +701,7 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
     return formatTimestampCSV(finalTimestamp);
   };
 
-  // Handler export CSV
-  const handleExportCSV = () => {
-    if (!filteredPasien || filteredPasien.length === 0) {
-      // Trigger toast notification jika tidak ada data
-      window.dispatchEvent(new CustomEvent('show-toast', {
-        detail: { message: 'Tidak ada data untuk diexport!', type: 'error' }
-      }));
-      return;
-    }
 
-    const csvData = filteredPasien.map(kunjungan => ({
-      'Nomor Antrian': kunjungan.nomor_antrian || '-',
-      'Nama Pasien': kunjungan.pasien?.nama || '-',
-      'Tanggal Masuk': formatTimestampCSV(kunjungan.created_at),
-      'Waktu Selesai': getWaktuSelesaiCSV(kunjungan),
-      'Total Durasi': formatDuration(getTotalDurasi(kunjungan)),
-      'Jenis Pasien': kunjungan.jenis_pasien || '-',
-      'Penjamin': kunjungan.penjamin || '-',
-      'ESI Level': kunjungan.triase?.esi || '-',
-      'Durasi Tahap 1': formatDuration(getDurasiTahap(kunjungan, 1)),
-      'Durasi Tahap 2': formatDuration(getDurasiTahap(kunjungan, 2)),
-      'Durasi Tahap 3': formatDuration(getDurasiTahap(kunjungan, 3)),
-      'Durasi Tahap 4': formatDuration(getDurasiTahap(kunjungan, 4)),
-      'Durasi Tahap 5': formatDuration(getDurasiTahap(kunjungan, 5)),
-      'Durasi Tahap 6': formatDuration(getDurasiTahap(kunjungan, 6)),
-      'Status Akhir': kunjungan.keputusan_akhir || '-',
-      'Disposisi Ruangan': kunjungan.disposisi_ruangan || '-',
-      'Alasan Hapus': kunjungan.alasan_hapus || '-',
-      'Alasan Rujuk': kunjungan.alasan_rujuk || '-'
-    }));
-
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    const today = new Date().toISOString().split('T')[0];
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Rekap_Pasien_Selesai_${today}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Trigger toast notification sukses
-    window.dispatchEvent(new CustomEvent('show-toast', {
-      detail: { message: 'CSV berhasil diunduh!', type: 'success' }
-    }));
-  };
 
   return (
     <>
@@ -597,7 +736,8 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
               onClick={() => {
                 setStartDateDisplay("");
                 setEndDateDisplay("");
-                setSelectedKeputusanAkhir("semua");
+                setSearchQuery("");
+                setAppliedSearch("");
               }}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-md transition-colors duration-200"
             >
@@ -605,28 +745,63 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
             </button>
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors duration-200 whitespace-nowrap"
+              disabled={isExporting || loading}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors duration-200 whitespace-nowrap"
             >
-              <Download size={16} />
-              Unduh Laporan
+              {isExporting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  Mengunduh...
+                </>
+              ) : (
+                <>
+                  <Download size={16} />
+                  Unduh Laporan
+                </>
+              )}
             </button>
             <span className="text-xs text-gray-500">*Maksimal rentang 7 hari</span>
           </div>
         </div>
         {/* --- Akhir Date Filter & Export Button --- */}
         
-        {/* --- Search Bar --- */}
-        <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-4">
-          <div className="flex items-center space-x-2 flex-1">
-            <Search size={18} className="text-gray-400" />
-            <input
-              type="text"
-              placeholder="Cari nama pasien atau ruangan..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-sm bg-transparent focus:outline-none placeholder-gray-400 text-gray-700"
-            />
+        {/* --- Search Bar dengan Button --- */}
+        <div className="p-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center flex-1 gap-2 bg-white border border-gray-300 rounded-md px-3 py-2 focus-within:ring-2 focus-within:ring-green-500">
+              <Search size={18} className="text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari nama pasien atau ruangan..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={handleSearchKeyPress}
+                className="w-full text-sm bg-transparent focus:outline-none placeholder-gray-400 text-gray-700"
+              />
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={loading}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-md transition-colors duration-200 flex items-center gap-2 whitespace-nowrap"
+            >
+              <Search size={16} />
+              Cari
+            </button>
+            {appliedSearch && (
+              <button
+                onClick={handleClearSearch}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-700 text-sm font-medium rounded-md transition-colors duration-200 whitespace-nowrap"
+              >
+                Clear
+              </button>
+            )}
           </div>
+          {appliedSearch && (
+            <div className="mt-2 text-sm text-gray-600">
+              Hasil pencarian: <span className="font-semibold">"{appliedSearch}"</span>
+            </div>
+          )}
         </div>
         {/* --- Akhir Search Bar --- */}
 
@@ -641,15 +816,23 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
             </tr>
           </thead>
           <tbody>
-            {/* 🚀 Gunakan 'filteredPasien' (data real) */}
-            {filteredPasien.length > 0 ? (
+            {/* Show loading skeleton */}
+            {loading ? (
+              [...Array(5)].map((_, i) => (
+                <tr key={i} className="border-t border-gray-200">
+                  <td colSpan="5" className="px-6 py-3">
+                    <div className="animate-pulse bg-gray-200 h-8 rounded"></div>
+                  </td>
+                </tr>
+              ))
+            ) : filteredPasien && filteredPasien.length > 0 ? (
               filteredPasien.map((kunjungan) => {
                 
                 // --- 🚀 Logika Dinamis (Persyaratan Anda) ---
-                const { keputusan_akhir, pasien } = kunjungan;
+                const { keputusan_akhir } = kunjungan;
                 
                 // Logika inisial: 1 kata = 1 huruf, 2 kata = 2 huruf, 3+ kata = 3 huruf
-                const namaWords = pasien.nama.split(" ").filter(word => word.length > 0);
+                const namaWords = (kunjungan.nama || "").split(" ").filter(word => word.length > 0);
                 let inisial = "";
                 if (namaWords.length === 1) {
                   inisial = namaWords[0][0].toUpperCase();
@@ -753,12 +936,86 @@ export default function PasienSelesai({ data, keputusanAkhirFilter = "" }) {
             ) : (
               <tr className="border-t border-gray-200">
                 <td colSpan="5" className="text-center py-10 text-gray-500">
-                  {searchQuery ? `Tidak ada pasien yang ditemukan dengan nama "${searchQuery}".` : "Tidak ada pasien selesai hari ini."}
+                  {appliedSearch ? `Tidak ada pasien dengan pencarian "${appliedSearch}"` : "Tidak ada data pasien selesai."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+
+        {/* Pagination Controls */}
+        {filteredPasien.length > 0 && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Menampilkan <span className="font-semibold">{totalItems > 0 ? startIndex + 1 : 0}</span> - <span className="font-semibold">{endIndex}</span> dari <span className="font-semibold">{totalItems}</span> pasien
+              {appliedSearch && ` (hasil pencarian "${appliedSearch}")`}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 flex items-center gap-1"
+              >
+                <ChevronLeft size={16} />
+                Sebelumnya
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {/* Show first page */}
+                {currentPage > 3 && (
+                  <>
+                    <button
+                      onClick={() => goToPage(1)}
+                      className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-gray-300 hover:bg-gray-100 text-gray-700"
+                    >
+                      1
+                    </button>
+                    {currentPage > 4 && <span className="px-2 text-gray-500">...</span>}
+                  </>
+                )}
+                
+                {/* Show pages around current page */}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(page => page >= currentPage - 2 && page <= currentPage + 2)
+                  .map(page => (
+                    <button
+                      key={page}
+                      onClick={() => goToPage(page)}
+                      className={`px-3 py-2 rounded-md text-sm font-medium ${
+                        page === currentPage
+                          ? 'bg-green-600 text-white'
+                          : 'bg-white border border-gray-300 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                
+                {/* Show last page */}
+                {currentPage < totalPages - 2 && (
+                  <>
+                    {currentPage < totalPages - 3 && <span className="px-2 text-gray-500">...</span>}
+                    <button
+                      onClick={() => goToPage(totalPages)}
+                      className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-gray-300 hover:bg-gray-100 text-gray-700"
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              <button
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 flex items-center gap-1"
+              >
+                Selanjutnya
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- Render Modal --- */}

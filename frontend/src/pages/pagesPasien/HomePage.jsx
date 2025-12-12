@@ -103,10 +103,10 @@ export default function HomePage() {
                       </span>
                     </div>
                     <h2 className="mt-6 text-2xl font-semibold text-white">
-                      Mulai dengan nomor antrian IGD Anda
+                      Mulai Dengan Nomor Kunjungan IGD Anda
                     </h2>
                     <p className="mt-2 text-sm text-white/65">
-                      Masukkan kode antrian atau pindai barcode untuk memonitor progres tanpa menunggu giliran.
+                      Masukkan nomor kunjungan atau pindai barcode untuk memonitor progres tanpa menunggu giliran.
                     </p>
 
                     <div className="mt-8 flex flex-col gap-3">
@@ -170,7 +170,7 @@ export default function HomePage() {
             <span>
               © {new Date().getFullYear()} Rumah Sakit Hermina Pasteur • Patient Experience Center
             </span>
-            <span>Keamanan data selevel HIPAA • Enkripsi TLS 1.3</span>
+            <span></span>
           </div>
         </footer>
     </div>

@@ -39,7 +39,7 @@ const severityTextMap = {
 const stepConfigs = [
 	{
 		id: 1,
-		title: "Pendaftaran & Pemeriksaan",
+		title: "Pemeriksaan Triase",
 		subtitle: "Registration & Initial Check",
 		icon: ClipboardCheck,
 	},
@@ -316,6 +316,12 @@ export default function StatusPasien() {
 							: finalDecision.toUpperCase()
 					}] : []),
 				];
+				if ((kunjunganData.keputusan_akhir || "").toLowerCase() === "rawat_jalan") {
+					descriptionItems.push({
+						label: "Deskripsi",
+						value: "Mohon ditunggu, obat dalam proses peracikan dan pengemasan."
+					});
+				}
 			} else if (stepNumber === 6) {
 				descriptionItems = [
 					{ 

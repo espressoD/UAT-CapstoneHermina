@@ -29,63 +29,63 @@ export default function LoginAdmin() {
     }
 
     try {
-      const { data: email, error: rpcError } = await supabase.rpc(
-        "get_email_from_id_pegawai",
-        { pegawai_id_input: nip }
-      );
-
-      if (rpcError) throw rpcError;
-      if (!email) throw new Error("ID Pegawai tidak ditemukan.");
-
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      
+      // Call backend login endpoint
+      const response = await fetch(`${API_URL}/api/v2/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_pegawai: nip,
+          password: password
+        })
       });
 
-      if (loginError) throw loginError;
+      const data = await response.json();
 
-      // Fetch user profile to determine redirect
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (!profileError && profile) {
-          setShowSuccess(true);
-          setTimeout(() => {
-            // Redirect based on role
-            if (profile.role === 'perawat_kamala') {
-              navigate("/admin/dashboard-kamala");
-            } else if (profile.role === 'perawat_padma') {
-              navigate("/admin/dashboard-padma");
-            } else {
-              navigate("/admin/dashboard");
-            }
-          }, 1000);
-          return;
-        }
+      if (!response.ok) {
+        throw new Error(data.error || 'Login gagal');
       }
 
-      // Fallback to default dashboard
+      console.log('[LOGIN] Response data:', data);
+
+      // PENTING: Simpan profile ke localStorage SEBELUM setSession
+      // AuthContext akan membaca dari localStorage ini
+      if (data.profile) {
+        localStorage.setItem('userProfile', JSON.stringify(data.profile));
+        console.log('[LOGIN] Profile saved to localStorage:', data.profile);
+      }
+
+      // Set session in Supabase client
+      if (data.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+        console.log('[LOGIN] Session set in Supabase client');
+      }
+
+      // Show success message
       setShowSuccess(true);
-      setTimeout(() => {
-        navigate("/admin/dashboard");
-      }, 1000);
+
+      // Wait untuk AuthContext update state, then navigate
+      // Gunakan delay yang cukup untuk memastikan onAuthStateChange selesai
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      console.log('[LOGIN] Navigating to dashboard, role:', data.profile?.role);
+      if (data.profile?.role === 'perawat_kamala') {
+        navigate("/admin/dashboard-kamala", { replace: true });
+      } else if (data.profile?.role === 'perawat_padma') {
+        navigate("/admin/dashboard-padma", { replace: true });
+      } else {
+        navigate("/admin/dashboard", { replace: true });
+      }
+
     } catch (err) {
       console.error("Login error:", err.message);
-
-      if (err.message.includes("ID Pegawai tidak ditemukan")) {
-        setErrorMessage("ID Pegawai (NIP) tidak ditemukan.");
-      } else if (err.message.includes("Invalid login credentials")) {
-        setErrorMessage("ID Pegawai atau Password salah!");
-      } else {
-        setErrorMessage(err.message);
-      }
-
+      setErrorMessage(err.message || 'Terjadi kesalahan saat login');
       setShowError(true);
     } finally {
       setLoading(false);

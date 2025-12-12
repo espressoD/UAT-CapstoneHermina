@@ -86,12 +86,13 @@ async function generateNomorKunjungan(namaPasien, retryCount = 0) {
     
     // Query dengan pessimistic locking approach:
     // Dapatkan nomor antrian terakhir hari ini untuk memastikan uniqueness
+    // PENTING: Filter hanya nomor dengan format valid (InisialXXX) untuk avoid anomali
     const { data: lastKunjungan, error: queryError } = await supabase
       .from('kunjungan')
       .select('nomor_antrian')
       .gte('created_at', todayISO)
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(50); // Ambil lebih banyak untuk filter
     
     if (queryError) {
       console.error('Error querying last kunjungan:', queryError);
@@ -104,11 +105,27 @@ async function generateNomorKunjungan(namaPasien, retryCount = 0) {
     let urutan = 1;
     
     if (lastKunjungan && lastKunjungan.length > 0) {
-      const lastNomor = lastKunjungan[0].nomor_antrian;
-      // Extract angka dari nomor antrian terakhir (contoh: MR075 -> 75)
-      const match = lastNomor.match(/\d+$/);
-      if (match) {
-        urutan = parseInt(match[0], 10) + 1;
+      // Filter hanya nomor dengan format valid (Inisial + 3-5 digit)
+      // Regex: ^[A-Z]{1,3}\d{3,5}$ (1-3 huruf kapital + 3-5 digit)
+      const validNomors = lastKunjungan
+        .map(k => k.nomor_antrian)
+        .filter(nomor => /^[A-Z]{1,3}\d{3,5}$/.test(nomor));
+      
+      if (validNomors.length > 0) {
+        // Ambil nomor dengan urutan tertinggi
+        const maxUrutan = validNomors.reduce((max, nomor) => {
+          const match = nomor.match(/\d+$/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            return num > max ? num : max;
+          }
+          return max;
+        }, 0);
+        
+        urutan = maxUrutan + 1;
+        devLog(`Found ${validNomors.length} valid nomors today, max urutan: ${maxUrutan}, next: ${urutan}`);
+      } else {
+        devLog('No valid nomor antrian found today, starting from 1');
       }
     }
     
@@ -222,66 +239,82 @@ app.get('/api/v2/pasien/:id', async (req, res) => {
 });
 
 app.get('/api/v2/kunjungan', async (req, res) => {
-  const { data, error } = await supabase
-    .from('kunjungan')
-    .select(`
-      *,
-      pasien (
-        *
-      )
-    `)
-    .order('created_at', { ascending: false });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    
+    const status = req.query.status || 'Aktif'; 
+    
+    const { search, startDate, endDate, keputusan_akhir } = req.query;
 
-  if (error) {
-    console.error('Error mengambil data V2:', error);
-    return res.status(500).json({ error: error.message });
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = supabase
+      .from('kunjungan')
+      .select('*, pasien!inner(*)', { count: 'exact' });
+
+    if (status !== 'all') {
+      query = query.eq('status_kunjungan', status);
+    }
+
+    if (keputusan_akhir) {
+      query = query.eq('keputusan_akhir', keputusan_akhir);
+    }
+
+    if (search) {
+      query = query.ilike('pasien.nama', `%${search}%`);
+    }
+
+    if (startDate && endDate) {
+      query = query
+        .gte('created_at', `${startDate}T00:00:00`)
+        .lte('created_at', `${endDate}T23:59:59`);
+    }
+
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error(`Supabase Error [Status: ${status}]:`, error);
+      throw error;
+    }
+
+    const flattenedData = data.map(item => ({
+      ...item,
+      step_timestamps: normalizeStepTimestamps(item.step_timestamps),
+      nama: item.pasien?.nama || 'Tanpa Nama',
+      medrec: item.pasien?.medrec || '-',
+      nama_wali: item.pasien?.nama_wali,
+      hubungan_wali: item.pasien?.hubungan_wali,
+      telepon_wali: item.pasien?.telepon_wali,
+      pasien: undefined 
+    }));
+
+    res.json({
+      success: true,
+      meta: {
+        filterStatus: status,
+        filterDecision: keputusan_akhir || 'All', 
+        querySearch: search || null
+      },
+      data: flattenedData,
+      pagination: {
+        currentPage: page,
+        itemsPerPage: limit,
+        totalItems: count,
+        totalPages: Math.ceil(count / limit)
+      }
+    });
+
+  } catch (err) {
+    console.error('Server Error:', err.message);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Gagal memuat data kunjungan.' 
+    });
   }
-
-  // Flatten data untuk setiap kunjungan
-  const flattenedData = data.map(item => ({
-    ...item,
-    step_timestamps: normalizeStepTimestamps(item.step_timestamps),
-    nama: item.pasien?.nama,
-    medrec: item.pasien?.medrec,
-    nama_wali: item.pasien?.nama_wali,
-    hubungan_wali: item.pasien?.hubungan_wali,
-    telepon_wali: item.pasien?.telepon_wali,
-  }));
-
-  res.json(flattenedData);
-});
-
-app.get('/api/v2/kunjungan/:id', async (req, res) => {
-  const { id } = req.params;
-
-  const { data, error } = await supabase
-    .from('kunjungan')
-    .select(`
-      *,
-      pasien (
-        *
-      )
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error) {
-    console.error('Error mengambil data kunjungan tunggal V2:', error.message);
-    return res.status(404).json({ error: 'Data kunjungan tidak ditemukan' });
-  }
-
-  // Flatten data untuk kemudahan frontend
-  const flattenedData = {
-    ...dataKunjungan,
-    step_timestamps: normalizeStepTimestamps(dataKunjungan.step_timestamps),
-    nama: dataKunjungan.pasien?.nama,
-    medrec: dataKunjungan.pasien?.medrec,
-    nama_wali: dataKunjungan.pasien?.nama_wali,
-    hubungan_wali: dataKunjungan.pasien?.hubungan_wali,
-    telepon_wali: data.pasien?.telepon_wali,
-  };
-
-  res.json(flattenedData);
 });
 
 app.patch('/api/v2/kunjungan/:id', async (req, res) => {
@@ -305,7 +338,9 @@ app.patch('/api/v2/kunjungan/:id', async (req, res) => {
     disposisi_ruangan,
     step_timestamps,
     alasan_hapus,
-    alasan_rujuk
+    alasan_rujuk,
+    bed_number,
+    unit
   } = req.body;
 
   const updateData = {};
@@ -329,6 +364,8 @@ app.patch('/api/v2/kunjungan/:id', async (req, res) => {
   if (step_timestamps !== undefined) updateData.step_timestamps = step_timestamps;
   if (alasan_hapus !== undefined) updateData.alasan_hapus = alasan_hapus;
   if (alasan_rujuk !== undefined) updateData.alasan_rujuk = alasan_rujuk;
+  if (bed_number !== undefined) updateData.bed_number = bed_number;
+  if (unit !== undefined) updateData.unit = unit;
 
   if (Object.keys(updateData).length === 0) {
     return res.status(400).json({ error: 'Tidak ada data untuk di-update.' });
@@ -380,10 +417,17 @@ app.post('/api/v2/kunjungan', async (req, res) => {
     penjamin,
     nomorAsuransi,
     keluhanUtama,
+    bedNumber,
+    unit,
   } = req.body;
 
-  if (!nama || !namaWali || !teleponWali) {
-    return res.status(400).json({ error: 'Nama, Nama Wali, dan Telepon Wali wajib diisi.' });
+  if (!nama || !penjamin) {
+    return res.status(400).json({ error: 'Nama dan Penjamin wajib diisi.' });
+  }
+  
+  // Validasi nomor asuransi jika penjamin bukan "Umum"
+  if (penjamin !== 'Umum' && !nomorAsuransi) {
+    return res.status(400).json({ error: 'Nomor Asuransi wajib diisi untuk penjamin selain Umum.' });
   }
   
   // Retry logic untuk handle concurrent requests
@@ -399,9 +443,9 @@ app.post('/api/v2/kunjungan', async (req, res) => {
       medrec: medrec,
       umur: umur || null,
       jenis_kelamin: jenisKelamin || null,
-      nama_wali: namaWali,
-      hubungan_wali: hubunganWali,
-      telepon_wali: teleponWali
+      nama_wali: namaWali || null,
+      hubungan_wali: hubunganWali || null,
+      telepon_wali: teleponWali || null
     };
     
     const { data: dataPasien, error: errorPasien } = await supabase
@@ -441,6 +485,8 @@ app.post('/api/v2/kunjungan', async (req, res) => {
         penjamin: penjamin,
         nomor_asuransi: nomorAsuransi,
         keluhan_utama: keluhanUtama || null,
+        bed_number: bedNumber || null,
+        unit: unit || null,
         status_kunjungan: 'Aktif',
         current_step: 1,
         step_timestamps: inisialStepTimestamps
@@ -1155,6 +1201,280 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     uptime: process.uptime()
   });
+});
+
+// ========================================
+// AUTH ENDPOINTS
+// ========================================
+
+// Login endpoint - authenticate via backend
+app.post('/api/v2/auth/login', async (req, res) => {
+  const { id_pegawai, password } = req.body;
+
+  devLog('[LOGIN] Attempt with ID Pegawai:', id_pegawai);
+
+  if (!id_pegawai || !password) {
+    return res.status(400).json({ 
+      error: 'ID Pegawai dan Password wajib diisi!' 
+    });
+  }
+
+  try {
+    // 1. Get email from id_pegawai using RPC function
+    const { data: email, error: rpcError } = await supabase.rpc(
+      'get_email_from_id_pegawai',
+      { pegawai_id_input: id_pegawai }
+    );
+
+    if (rpcError) {
+      devLog('[LOGIN] RPC Error:', rpcError);
+      throw rpcError;
+    }
+
+    if (!email) {
+      devLog('[LOGIN] ID Pegawai not found:', id_pegawai);
+      return res.status(404).json({ 
+        error: 'ID Pegawai tidak ditemukan.' 
+      });
+    }
+
+    devLog('[LOGIN] Email found:', email);
+
+    // 2. Authenticate with Supabase Auth
+    const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (loginError) {
+      devLog('[LOGIN] Auth Error:', loginError);
+      return res.status(401).json({ 
+        error: 'ID Pegawai atau Password salah!' 
+      });
+    }
+
+    if (!authData.user) {
+      return res.status(401).json({ 
+        error: 'Login gagal. Tidak ada data user.' 
+      });
+    }
+
+    devLog('[LOGIN] Auth successful for user:', authData.user.id);
+
+    // 3. Get user profile from profiles table
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, nama_lengkap, jabatan, role, id_pegawai')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      devLog('[LOGIN] Profile Error:', profileError);
+      return res.status(500).json({ 
+        error: 'Gagal mengambil data profil user.' 
+      });
+    }
+
+    devLog('[LOGIN] Profile retrieved:', profile.role);
+
+    // 4. Return session and user data
+    res.status(200).json({
+      message: 'Login berhasil!',
+      session: authData.session,
+      user: authData.user,
+      profile: profile
+    });
+
+  } catch (error) {
+    console.error('[LOGIN] Server Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Terjadi kesalahan server.' 
+    });
+  }
+});
+
+// Logout endpoint
+app.post('/api/v2/auth/logout', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+
+    // Sign out from Supabase
+    const { error } = await supabase.auth.signOut(token);
+
+    if (error) {
+      devLog('[LOGOUT] Error:', error);
+      throw error;
+    }
+
+    devLog('[LOGOUT] Success');
+    res.status(200).json({ message: 'Logout berhasil!' });
+
+  } catch (error) {
+    console.error('[LOGOUT] Server Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Terjadi kesalahan server.' 
+    });
+  }
+});
+
+// ========================================
+// BED MANAGEMENT ENDPOINTS
+// ========================================
+
+// GET all beds by unit
+app.get('/api/v2/beds/:unit', async (req, res) => {
+  const { unit } = req.params;
+
+  devLog('[GET BEDS] Fetching beds for unit:', unit);
+
+  try {
+    const { data: beds, error } = await supabase
+      .from('beds')
+      .select('*')
+      .eq('unit', unit.toLowerCase())
+      .eq('is_active', true)
+      .order('bed_number', { ascending: true });
+
+    if (error) throw error;
+
+    devLog('[GET BEDS] Found beds:', beds?.length || 0);
+    res.status(200).json(beds || []);
+
+  } catch (error) {
+    console.error('[GET BEDS] Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Gagal mengambil data beds.' 
+    });
+  }
+});
+
+// POST create new bed
+app.post('/api/v2/beds', async (req, res) => {
+  const { bed_number, unit } = req.body;
+
+  devLog('[CREATE BED] Creating bed:', bed_number, 'for unit:', unit);
+
+  if (!bed_number || !unit) {
+    return res.status(400).json({ 
+      error: 'bed_number dan unit wajib diisi!' 
+    });
+  }
+
+  try {
+    const authHeader = req.headers.authorization;
+    let userId = null;
+
+    // Get user ID from token if available (optional for bed creation)
+    // Skip auth check for now since bed creation should work without token
+    // if (authHeader && authHeader.startsWith('Bearer ')) {
+    //   const token = authHeader.substring(7);
+    //   // Note: supabase.auth.getUser() only works client-side
+    //   // For server-side, we'd need to use supabase.auth.admin or verify JWT manually
+    // }
+
+    // Check if bed already exists (inactive)
+    const { data: existingBed } = await supabase
+      .from('beds')
+      .select('*')
+      .eq('bed_number', bed_number)
+      .eq('unit', unit.toLowerCase())
+      .eq('is_active', false)
+      .single();
+
+    // If bed exists but inactive, reactivate it
+    if (existingBed) {
+      const { data: reactivatedBed, error: reactivateError } = await supabase
+        .from('beds')
+        .update({ 
+          is_active: true, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', existingBed.id)
+        .select()
+        .single();
+
+      if (reactivateError) throw reactivateError;
+
+      devLog('[CREATE BED] Reactivated existing bed:', reactivatedBed);
+      return res.status(200).json(reactivatedBed);
+    }
+
+    // Create new bed if doesn't exist
+    const { data: newBed, error } = await supabase
+      .from('beds')
+      .insert([
+        {
+          bed_number: bed_number,
+          unit: unit.toLowerCase(),
+          is_active: true,
+          created_by: userId
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      // Check for unique constraint violation
+      if (error.code === '23505') {
+        return res.status(409).json({ 
+          error: `Bed ${bed_number} sudah ada di unit ${unit}!` 
+        });
+      }
+      throw error;
+    }
+
+    devLog('[CREATE BED] Success:', newBed);
+    res.status(201).json(newBed);
+
+  } catch (error) {
+    console.error('[CREATE BED] Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Gagal membuat bed baru.' 
+    });
+  }
+});
+
+// DELETE bed
+app.delete('/api/v2/beds/:id', async (req, res) => {
+  const { id } = req.params;
+
+  devLog('[DELETE BED] Deleting bed ID:', id);
+
+  try {
+    // Soft delete: set is_active = false
+    const { data: deletedBed, error } = await supabase
+      .from('beds')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (!deletedBed) {
+      return res.status(404).json({ 
+        error: 'Bed tidak ditemukan.' 
+      });
+    }
+
+    devLog('[DELETE BED] Success:', deletedBed);
+    res.status(200).json({ 
+      message: 'Bed berhasil dihapus.',
+      bed: deletedBed 
+    });
+
+  } catch (error) {
+    console.error('[DELETE BED] Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Gagal menghapus bed.' 
+    });
+  }
 });
 
 app.listen(port, () => {

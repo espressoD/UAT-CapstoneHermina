@@ -102,20 +102,22 @@ export default function CariPasien() {
               </p>
               </div>
           </div>
-          <button
-            onClick={() => navigate(getDashboardRoute(userProfile))}
-            className="flex items-center gap-2 bg-white text-green-700 hover:bg-green-50 transition-colors px-3 py-1.5 rounded-md font-medium shadow-sm"
-          >
-            <ArrowLeft size={16} />
-            <span>Kembali ke Dashboard</span>
-          </button>
         </div>
       </header>
 
       {/* MAIN */}
       <main className="flex-1 flex items-center justify-center p-6">
-        <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-2xl">
-          <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
+        <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-2xl relative">
+          {/* Tombol Kembali ke Dashboard - di pojok kiri atas container */}
+          <button
+            onClick={() => navigate(getDashboardRoute(userProfile))}
+            className="absolute top-6 left-6 flex items-center gap-2 text-green-700 hover:text-green-800 transition-colors font-medium"
+          >
+            <ArrowLeft size={18} />
+            <span className="text-sm">Kembali ke Dashboard</span>
+          </button>
+
+          <h2 className="text-2xl font-bold text-center text-gray-900 mb-2 mt-8">
             Pendaftaran Pasien IGD
           </h2>
           <p className="text-center text-gray-500 mb-6">

@@ -10,10 +10,11 @@ import {
   ShieldCheck,
   Sparkles,
   Wifi,
-  Loader, // 🚀 Tambah Loader
+  Loader,
 } from "lucide-react";
 import PrimaryButton from "../../components/ui/PrimaryButton";
 import PatientHeader from "../../components/layout/PatientHeader";
+import BarcodeScanner from "../../components/ui/BarcodeScanner";
 
 const quickInsights = [
   {
@@ -39,11 +40,56 @@ const quickInsights = [
 export default function CekAntrian() {
   const navigate = useNavigate();
   const [nomorAntrian, setNomorAntrian] = useState("");
-  const [loading, setLoading] = useState(false); // 🚀 State loading baru
+  const [loading, setLoading] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
-  // Handle submit: encode nomor antrian menjadi hash dan navigate
+  const handleScanSuccess = async (decodedText) => {
+    console.log('📱 Scanned:', decodedText);
+    
+    // Jika hasil scan adalah URL (dari QR code PrintableTicket)
+    if (decodedText.includes('/status/')) {
+      const parts = decodedText.split('/status/');
+      if (parts.length > 1) {
+        const hash = parts[1].split('?')[0];
+        navigate(`/status/${hash}`);
+        return;
+      }
+    }
+    
+    // Jika hasil scan adalah nomor antrian langsung
+    const extractedNomor = decodedText.trim().toUpperCase();
+    setNomorAntrian(extractedNomor);
+    
+    // Auto-submit
+    setLoading(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const encodeResponse = await fetch(
+        `${API_URL}/api/public/encode-antrian`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nomor_antrian: extractedNomor })
+        }
+      );
+
+      if (encodeResponse.ok) {
+        const { hash } = await encodeResponse.json();
+        navigate(`/status/${hash}`);
+      } else {
+        navigate("/salah", { state: { attempted: extractedNomor } });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert('Terjadi kesalahan. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
+
     const sanitized = nomorAntrian.replace(/\s/g, '').toUpperCase();
     if (!sanitized) return;
 
@@ -142,25 +188,31 @@ export default function CekAntrian() {
                         <h2 className="text-2xl font-semibold text-white">
                           Masukkan Nomor Kunjungan Pasien Anda                        </h2>
                         <p className="text-sm text-white/65">
-                          Contoh format: <span className="font-semibold text-[#B1FFD6]">123456789</span>
+                          Contoh format: <span className="font-semibold text-[#B1FFD6]">ABC123</span>
                         </p>
                       </div>
 
                       <label className="block text-left text-xs font-semibold uppercase tracking-[0.35em] text-white/70">
-                        Nomor Pasien
+                        Nomor Kunjungan
                       </label>
                       <input
                         value={nomorAntrian}
                         onChange={(event) => setNomorAntrian(event.target.value)}
-                        placeholder="5 DIGIT"
-                        className="w-full rounded-2xl border border-white/18 bg-white px-6 py-4 text-center text-2xl font-black tracking-[0.32em] text-[#012315] shadow-[0_25px_70px_-55px_rgba(0,76,44,0.42)] transition focus:border-[#00B56A] focus:outline-none focus:ring-2 focus:ring-[#00B56A]/28"
+                        placeholder="MASUKKAN NOMOR"
+                        className="w-full rounded-2xl border border-white/18 bg-white px-6 py-4 text-center text-lg font-black tracking-[0.32em] text-[#012315] shadow-[0_25px_70px_-55px_rgba(0,76,44,0.42)] transition focus:border-[#00B56A] focus:outline-none focus:ring-2 focus:ring-[#00B56A]/28"
                         maxLength={12}
                         autoFocus
                         disabled={loading} // 🚀 Tambah disable
                       />
 
                       <div className="space-y-3">
-                        <PrimaryButton type="submit" variant="accent" icon={loading ? Loader : ArrowRight} className="w-full" disabled={loading}>
+                        <PrimaryButton 
+                          type="submit" 
+                          variant="accent" 
+                          icon={loading ? Loader : ArrowRight} 
+                          className="w-full" 
+                          disabled={loading}
+                        >
                           {loading ? "Memvalidasi..." : "Masuk ke Portal IGD"}
                         </PrimaryButton>
                         <PrimaryButton
@@ -169,7 +221,7 @@ export default function CekAntrian() {
                           icon={QrCode}
                           iconPosition="left"
                           className="w-full border-white/22 bg-white/10 text-white hover:border-white/30 hover:bg-white/16"
-                          onClick={() => alert("Fitur Pindai Barcode belum tersedia.")} // 🚀 Ganti onClick
+                          onClick={() => setShowScanner(true)}
                           disabled={loading}
                         >
                           Pindai Barcode
@@ -245,6 +297,13 @@ export default function CekAntrian() {
             <span>Pengolahan data terenkripsi • Keamanan pasien prioritas utama</span>
           </div>
         </footer>
+
+        {/* Barcode Scanner Modal */}
+        <BarcodeScanner
+          isOpen={showScanner}
+          onClose={() => setShowScanner(false)}
+          onScanSuccess={handleScanSuccess}
+        />
     </div>
   );
 }

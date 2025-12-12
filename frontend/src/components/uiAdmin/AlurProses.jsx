@@ -11,7 +11,7 @@ import {
 
 // (MODIFIKASI) steps diubah
 const steps = [
-  { id: 1, title: "Pendaftaran & Pemeriksaan", icon: ClipboardCheck },
+  { id: 1, title: "Pemeriksaan Triase", icon: ClipboardCheck },
   { id: 2, title: "Pemeriksaan Dokter IGD", icon: Stethoscope },
   { id: 3, title: "Pemeriksaan Penunjang", icon: FlaskRound },
   { id: 4, title: "Tindakan & Pengobatan", icon: Activity },
